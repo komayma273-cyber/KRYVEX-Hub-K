@@ -10135,6 +10135,110 @@ end
 -- END KRYVEX AUTO EMOTE CLICKER
 --=====================================================
 
+--=====================================================
+-- KRYVEX HUB | ปรับความเร็วอีโมท (SpeedMult) เริ่มต้น 100
+-- วางต่อท้ายสุดของสคริปต์ (หลังปุ่ม "ปุ่มใหม่")
+--=====================================================
+
+do
+    local ReplicatedStorage = game:GetService("ReplicatedStorage")
+    local Env = getgenv()
+
+    local EmoteSpeed = 100
+    local EMOTE_MULT = 0.005
+    local EmoteModules = {}
+    local EmoteSeen = {}
+
+    -- รันซ้ำ = loop เก่าหยุดเอง
+    Env.KRYVEX_EmoteSpeedGen = (Env.KRYVEX_EmoteSpeedGen or 0) + 1
+    local MyGen = Env.KRYVEX_EmoteSpeedGen
+
+    local function checkModule(mod)
+        local ok, data = pcall(require, mod)
+        if not ok or type(data) ~= "table" then return end
+
+        local has = type(data.SpeedMult) == "number"
+            or (type(data.EmoteInfo) == "table"
+                and type(data.EmoteInfo.SpeedMult) == "number")
+
+        if has then
+            table.insert(EmoteModules, data)
+        end
+    end
+
+    local function scanEmoteModules()
+        local containers = {
+            ReplicatedStorage,
+            LocalPlayer:FindFirstChild("PlayerGui"),
+            LocalPlayer:FindFirstChild("Backpack"),
+        }
+
+        for _, container in ipairs(containers) do
+            if container then
+                for _, d in ipairs(container:GetDescendants()) do
+                    if d:IsA("ModuleScript") and not EmoteSeen[d] then
+                        EmoteSeen[d] = true
+                        task.spawn(checkModule, d)
+                    end
+                end
+            end
+        end
+    end
+
+    local function applyEmoteSpeed()
+        local target = safe(EmoteSpeed) * EMOTE_MULT
+
+        for _, data in ipairs(EmoteModules) do
+            pcall(function()
+                if type(data.SpeedMult) == "number"
+                    and data.SpeedMult ~= target then
+                    data.SpeedMult = target
+                end
+
+                if type(data.EmoteInfo) == "table"
+                    and type(data.EmoteInfo.SpeedMult) == "number"
+                    and data.EmoteInfo.SpeedMult ~= target then
+                    data.EmoteInfo.SpeedMult = target
+                end
+            end)
+        end
+    end
+
+    SettingsTab:CreateInput({
+        Name = "ปรับความเร็วอีโมท",
+        PlaceholderText = "ใส่ตัวเลข",
+        Default = tostring(EmoteSpeed),
+
+        Callback = function(Value)
+            local Number = tonumber(Value)
+
+            if Number then
+                EmoteSpeed = safe(Number)
+                scanEmoteModules()
+                applyEmoteSpeed()
+            end
+        end
+    })
+
+    -- สแกนหาโมดูลอีโมท (ครั้งแรก + ทุก 5 วิ)
+    task.spawn(function()
+        while Env.KRYVEX_EmoteSpeedGen == MyGen do
+            scanEmoteModules()
+            task.wait(5)
+        end
+    end)
+
+    -- ปรับค่าซ้ำทุก 1 วิ ตามสวิตช์ "ปรับค่าอัตโนมัติ"
+    task.spawn(function()
+        while Env.KRYVEX_EmoteSpeedGen == MyGen do
+            if Env.AutoApplySettings then
+                applyEmoteSpeed()
+            end
+            task.wait(1)
+        end
+    end)
+end
+
 --=================================================
 -- KRYVEX HUB | EMPTY BUTTON
 --========================================
