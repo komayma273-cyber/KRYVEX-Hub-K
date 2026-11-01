@@ -1,3 +1,609 @@
+--=========================================================
+-- KRYVEX HUB | LANGUAGE PICKER + I18N LAYER
+-- วางบล็อกนี้ "บนสุด" ของสคริปต์เดิม แล้วลบบล็อกเดิมนี้ออก:
+--
+--   local KOMAT = loadstring(game:HttpGet(
+--   "https://raw.githubusercontent.com/komayma273-cyber/Script-Evade/refs/heads/main/TAS"
+--   ))()
+--
+-- ที่เหลือของสคริปต์เดิม (ตั้งแต่ local Window = KOMAT:CreateWindow ลงไป) ไม่ต้องแก้อะไรเลย
+--=========================================================
+
+local KOMAT
+
+do
+    local Players = game:GetService("Players")
+    local CoreGui = game:GetService("CoreGui")
+    local LocalPlayer = Players.LocalPlayer
+    local Env = getgenv()
+
+    local KOMAT_URL = "https://raw.githubusercontent.com/komayma273-cyber/Script-Evade/refs/heads/main/TAS"
+
+    local function GuiParent()
+        if gethui then
+            local ok, h = pcall(gethui)
+            if ok and h then return h end
+        end
+        if pcall(function() return CoreGui.Name end) then
+            return CoreGui
+        end
+        return LocalPlayer:WaitForChild("PlayerGui")
+    end
+
+    ------------------------------------------------------------
+    -- 1) UI เลือกภาษา
+    ------------------------------------------------------------
+    local function PickLanguage()
+        local Chosen = nil
+        local Parent = GuiParent()
+
+        local Old = Parent:FindFirstChild("KRYVEX_LangPicker")
+        if Old then Old:Destroy() end
+
+        local Gui = Instance.new("ScreenGui")
+        Gui.Name = "KRYVEX_LangPicker"
+        Gui.ResetOnSpawn = false
+        Gui.IgnoreGuiInset = true
+        Gui.DisplayOrder = 999999
+        Gui.Parent = Parent
+
+        local Box = Instance.new("Frame")
+        Box.AnchorPoint = Vector2.new(0.5, 0.5)
+        Box.Position = UDim2.fromScale(0.5, 0.5)
+        Box.Size = UDim2.fromOffset(300, 180)
+        Box.BackgroundColor3 = Color3.fromRGB(18, 18, 22)
+        Box.BorderSizePixel = 0
+        Box.Parent = Gui
+        Instance.new("UICorner", Box).CornerRadius = UDim.new(0, 16)
+
+        local Stroke = Instance.new("UIStroke")
+        Stroke.Color = Color3.fromRGB(190, 195, 205)
+        Stroke.Thickness = 2
+        Stroke.Parent = Box
+
+        local Title = Instance.new("TextLabel")
+        Title.BackgroundTransparency = 1
+        Title.Position = UDim2.fromOffset(0, 14)
+        Title.Size = UDim2.new(1, 0, 0, 24)
+        Title.Font = Enum.Font.GothamBold
+        Title.Text = "KRYVEX HUB"
+        Title.TextSize = 20
+        Title.TextColor3 = Color3.fromRGB(245, 245, 250)
+        Title.Parent = Box
+
+        local Sub = Instance.new("TextLabel")
+        Sub.BackgroundTransparency = 1
+        Sub.Position = UDim2.fromOffset(0, 42)
+        Sub.Size = UDim2.new(1, 0, 0, 18)
+        Sub.Font = Enum.Font.GothamMedium
+        Sub.Text = "Select language / เลือกภาษา"
+        Sub.TextSize = 13
+        Sub.TextColor3 = Color3.fromRGB(160, 165, 175)
+        Sub.Parent = Box
+
+        local function MakeButton(Text, X, Code)
+            local Button = Instance.new("TextButton")
+            Button.Position = UDim2.fromOffset(X, 78)
+            Button.Size = UDim2.fromOffset(124, 70)
+            Button.BackgroundColor3 = Color3.fromRGB(34, 35, 42)
+            Button.AutoButtonColor = true
+            Button.BorderSizePixel = 0
+            Button.Font = Enum.Font.GothamBold
+            Button.Text = Text
+            Button.TextSize = 17
+            Button.TextColor3 = Color3.fromRGB(245, 245, 250)
+            Button.Parent = Box
+            Instance.new("UICorner", Button).CornerRadius = UDim.new(0, 12)
+
+            local BStroke = Instance.new("UIStroke")
+            BStroke.Color = Color3.fromRGB(120, 125, 135)
+            BStroke.Thickness = 1.5
+            BStroke.Parent = Button
+
+            Button.Activated:Connect(function()
+                if Chosen then return end
+                Chosen = Code
+            end)
+        end
+
+        MakeButton("🇹🇭\nไทย", 20, "th")
+        MakeButton("🇬🇧\nEnglish", 156, "en")
+
+        while not Chosen do
+            task.wait(0.1)
+        end
+
+        Gui:Destroy()
+        return Chosen
+    end
+
+    local Lang = PickLanguage()
+    Env.KRYVEX_LANG = Lang
+
+    local Real = loadstring(game:HttpGet(KOMAT_URL))()
+
+    -- ภาษาไทย = ใช้ของเดิมทั้งหมด ไม่แตะอะไร
+    local function InstallEnglish()
+
+    ------------------------------------------------------------
+    -- 2) พจนานุกรม ไทย -> อังกฤษ (แทนที่แบบข้อความตรงๆ เรียงจากยาวไปสั้น)
+    ------------------------------------------------------------
+    local D = {
+        -- Tabs
+        {"ตั้งค่า", "Settings"},
+        {"เมนูหลัก", "Main"},
+        {"แดช", "Dash"},
+        {"วาร์ป", "Teleport"},
+        {"ภาพจอ", "Screen"},
+        {"มองสิ่งต่างๆ", "Visuals"},
+        {"ฟาร์ม", "Farm"},
+        {"อีเว้นท์", "Event"},
+        {"อื่นๆ", "Misc"},
+        {"แมพ", "Map"},
+
+        -- Settings
+        {"ความเร็ว", "Speed"},
+        {"ขีดจำกัดการกระโดด", "Jump Cap"},
+        {"ความเร่งกลางอากาศ", "Air Strafe Acceleration"},
+        {"วิธีการปรับค่า", "Apply Method"},
+        {"ปรับค่าอัตโนมัติ", "Auto Apply Settings"},
+        {"รีเซ็ตค่าการเคลื่อนไหวแล้ว", "Movement values reset"},
+        {"รีเซ็ตค่าการเคลื่อนไหว", "Reset Movement Values"},
+        {"ใส่ตัวเลข", "Enter a number"},
+        {"ขอบปุ่มสีเงิน | ", ""},
+        {"ปรับความเร็วอีโมท", "Emote Speed"},
+        {"ปุ่มใหม่", "New Button"},
+
+        -- Floating / common
+        {"(ปุ่มลอย)", "(Floating)"},
+        {"กดเพื่อใช้", "Tap to use"},
+        {"พร้อม", "Ready"},
+        {"เปิด", "ON"},
+        {"ปิด", "OFF"},
+
+        -- Main
+        {"ออโต้กระโดด", "Auto Jump"},
+        {"ออโต้เด้ง", "Auto Bounce"},
+        {"เปิดออโต้เด้ง | ความสูง ", "Auto Bounce ON | Height "},
+        {"ปิดออโต้เด้ง", "Auto Bounce OFF"},
+        {"ความสูงออโต้เด้ง", "Auto Bounce Height"},
+        {"ระยะตรวจพื้น", "Ground Check Distance"},
+        {"เช่น", "e.g."},
+        {"ความรัวกดย่อ", "Crouch Spam Rate"},
+        {"ครั้ง/วินาที", "per sec"},
+        {"กดย่อรัวๆ", "Crouch Spam"},
+        {"กระโดดค้างต่อเนื่อง", "Hold-to-Bhop"},
+        {"เปิดแล้ว กดปุ่มกระโดดค้างไว้", "Enabled. Hold the jump button"},
+        {"แสดงเวลาในเกม", "Show Game Timer"},
+        {"เปิดหมุนตัวละครแล้ว", "Spin Character ON"},
+        {"ปิดหมุนตัวละครแล้ว", "Spin Character OFF"},
+        {"ใส่ความเร็ว", "Enter speed"},
+        {"ความเร็วหมุน", "Spin Speed"},
+        {"หมุนตัวละคร", "Spin Character"},
+        {"เปิดบินแล้ว", "Fly ON"},
+        {"ปิดบินแล้ว", "Fly OFF"},
+        {"ความเร็วบิน", "Fly Speed"},
+        {"บิน", "Fly"},
+        {"อุ้มแอ็ก", "Flex Carry"},
+        {"แอ็ก", "Flex"},
+        {"ออโต้อุ้ม", "Auto Carry"},
+
+        -- Lag switch
+        {"ระบบแลคสวิตช์พร้อมใช้งาน", "Lag Switch ready"},
+        {"เปิดปุ่มลอยแลคสวิตช์แล้ว", "Lag Switch floating button ON"},
+        {"ปิดปุ่มลอยแลคสวิตช์แล้ว", "Lag Switch floating button OFF"},
+        {"กดแล้ว Client จะกระตุกชั่วคราว", "Pressing it makes the client stutter briefly"},
+        {"หลังจากนั้นปุ่มจะนับ 3 → 2 → 1", "Then the button counts 3 → 2 → 1"},
+        {"แลคสวิตช์", "Lag Switch"},
+
+        -- Emote
+        {"ไม่สามารถกด CrouchButton ได้", "Can't press CrouchButton"},
+        {"ไม่พบ CrouchButton", "CrouchButton not found"},
+        {" ไม่พบปุ่มอีโมท", " emote button not found"},
+        {"ไม่สามารถกดอีโมทได้", "Can't press emote"},
+        {"เปิดปุ่มลอยกดอีโมทแล้ว", "Emote floating button ON"},
+        {"ปิดปุ่มลอยกดอีโมทแล้ว", "Emote floating button OFF"},
+        {"เลือกช่องอีโมท", "Select Emote Slot"},
+        {"กดอีโมทอัตโนมัติ", "Auto Press Emote"},
+        {"กดอีโมท", "Press Emote"},
+        {" สำเร็จ", " successful"},
+        {"กด ", "Pressed "},
+        {"เลือก ", "Selected "},
+
+        -- Respawn
+        {"เลือกการสปาว", "Select Respawn Mode"},
+        {"สปาวปกติ", "Normal Respawn"},
+        {"สปาวจุดเดิม", "Respawn at Same Spot"},
+        {"เปิดออโต้รีสปาว | ", "Auto Respawn ON | "},
+        {"ปิดออโต้รีสปาว", "Auto Respawn OFF"},
+        {"ออโต้รีสปาว", "Auto Respawn"},
+        {"ส่งคำสั่งเกิดใหม่แล้ว", "Respawn command sent"},
+        {"ส่งคำสั่งไม่สำเร็จ ตรวจสอบ Console", "Command failed, check Console"},
+        {"ส่งสัญญาณเกิดใหม่ไม่สำเร็จ", "Failed to send respawn signal"},
+        {"ส่งคำสั่งเกิดใหม่", "Send respawn command"},
+        {"เกิดใหม่", "Respawn"},
+
+        -- Dash
+        {"เปิดแดชไปหน้า | ความเร็ว ", "Dash Forward ON | Speed "},
+        {"ปิดแดชไปหน้าแล้ว", "Dash Forward OFF"},
+        {"เปิดแดชกระโดด | ความเร็ว ", "Dash Jump ON | Speed "},
+        {"ปิดแดชกระโดดแล้ว", "Dash Jump OFF"},
+        {"แดชไปหน้าพร้อมกระโดด", "Dash Forward + Jump"},
+        {"แดชไปหน้า", "Dash Forward"},
+        {"แดชกระโดด", "Dash Jump"},
+        {"แดชถอยหลังกระโดด", "Reverse Dash Jump"},
+        {"แดชถอยหลัง", "Reverse Dash"},
+
+        -- Misc tab
+        {"ทะลุกำแพง", "Noclip"},
+        {"เปิดทะลุกำแพงแล้ว", "Noclip ON"},
+        {"ปิดทะลุกำแพงแล้ว", "Noclip OFF"},
+        {"เปิดกระโดดดวงจันทร์แล้ว", "Moon Jump ON"},
+        {"ปิดกระโดดดวงจันทร์แล้ว", "Moon Jump OFF"},
+        {"กระโดดดวงจันทร์", "Moon Jump"},
+        {"แลกโค้ดอัตโนมัติ", "Auto Redeem Codes"},
+        {"ส่งโค้ดครบ ", "Sent "},
+        {" โค้ดแล้ว", " codes"},
+        {"เปิดมุมมองยืดแล้ว", "Stretched View ON"},
+        {"ปิดมุมมองยืดแล้ว", "Stretched View OFF"},
+        {"มุมมองยืด", "Stretched View"},
+        {"เปลี่ยนข้อความแสดงผลบนเครื่องนี้เท่านั้น", "Changes displayed text on this device only"},
+        {"เงิน", "Money"},
+        {"คะแนน", "Points"},
+        {"ตั๋ว", "Vouchers"},
+        {"โทเคน", "Tokens"},
+        {"เอาชีวิตรอด", "Survivals"},
+        {"เปิดระบบลบความมืดแล้ว", "Remove Darkness ON"},
+        {"ปิดระบบและคืนค่าแสงเดิมแล้ว", "Remove Darkness OFF, lighting restored"},
+        {"ลบความมืด", "Remove Darkness"},
+        {"ปรับกลางวันและกลางคืน", "Day / Night"},
+        {"เลือกช่วงเวลาที่ต้องการ", "Choose a time of day"},
+        {"ใช้การตั้งค่าเวลาที่เลือก", "Apply the selected time"},
+        {"กลางวัน", "Day"},
+        {"กลางคืน", "Night"},
+        {"ปรับเป็น", "Set to "},
+        {"แล้ว!", "!"},
+        {"ตกลง (เปลี่ยนท้องฟ้า)", "Apply (Change Sky)"},
+        {"ตกลง", "Apply"},
+        {"เลือกธีมท้องฟ้า", "Select Sky Theme"},
+        {"คืนค่าท้องฟ้าเดิมแล้ว", "Original sky restored"},
+        {"คืนค่าท้องฟ้าเดิม", "Restore Original Sky"},
+        {"เปลี่ยนเป็น ", "Changed to "},
+        {"ราตรีดาวเต็มฟ้า", "Starry Night"},
+        {"รุ่งอรุณชมพู-ทอง", "Pink-Gold Dawn"},
+        {"หมอกเช้าลึกลับ", "Mysterious Morning Fog"},
+        {"พายุมืดครึ้ม", "Dark Storm"},
+        {"ทุ่งหญ้า", "Meadow"},
+
+        -- Screen
+        {"เปิดลดกราฟฟิคแล้ว", "Low Graphics ON"},
+        {"ปิดลดกราฟฟิคแล้ว", "Low Graphics OFF"},
+        {"ลดกราฟฟิค", "Low Graphics"},
+        {"ลบหมอก", "Remove Fog"},
+        {"บูสFPS", "Boost FPS"},
+
+        -- Teleport
+        {"เปิดวาร์ปหนีบอทแล้ว", "Escape-Bot Warp ON"},
+        {"ปิดวาร์ปหนีบอทแล้ว", "Escape-Bot Warp OFF"},
+        {"วาร์ปหนีบอท", "Escape-Bot Warp"},
+        {"วาร์ปขึ้นบน 1200 studs แล้ว", "Teleported up 1200 studs"},
+        {"วาร์ปขึ้นบน", "Teleport Up"},
+        {"วาร์ปไปหาผู้เล่นล้ม 1s", "Teleport to Downed Player 1s"},
+        {"ไม่พบผู้เล่นที่เลือดเหลือ 0 ใน workspace.Players", "No downed player found in workspace.Players"},
+        {"ไม่พบผู้เล่นที่เลือดเหลือ 0", "No downed player found"},
+        {"ไม่พบข้อมูลผู้เล่น", "Player data not found"},
+        {"ทำรายการเสร็จแล้ว", "Done"},
+        {"เลือกผู้เล่น", "Select Player"},
+        {"วาร์ปไปหาผู้เล่น", "Teleport to Player"},
+        {"วาร์ปไปหา ", "Teleported to "},
+        {"กรุณาเลือกผู้เล่นก่อน", "Please select a player first"},
+        {"ไม่พบผู้เล่นหรือ Character", "Player or Character not found"},
+        {"ไม่พบผู้เล่นให้สุ่มวาร์ป", "No players to teleport to"},
+        {"ไม่พบผู้เล่น", "Player not found"},
+        {"วาร์ปสุ่มผู้เล่น", "Teleport to Random Player"},
+        {"เปิดคลิกเทเลพอร์ตแล้ว", "Click Teleport ON"},
+        {"ปิดคลิกเทเลพอร์ตแล้ว", "Click Teleport OFF"},
+        {"คลิกเทเลพอร์ต", "Click Teleport"},
+        {"กำลังช่วยผู้เล่นอยู่", "Already rescuing a player"},
+        {"ไม่พบตัวละครที่พร้อมใช้งาน", "No usable character found"},
+        {"กำลังไปหา: ", "Heading to: "},
+        {"อุ้มสำเร็จ กำลังกลับจุดเดิม", "Carry successful, returning"},
+        {"เกิดข้อผิดพลาดระหว่างช่วยผู้เล่น", "Error while rescuing players"},
+        {"กลับจุดเดิมแล้ว", "Returned to original spot"},
+        {"ไม่มีเป้าหมายที่อุ้มสำเร็จ", "No target was carried"},
+        {"ไม่พบเป้าหมายใหม่ที่ยังไม่ได้สั่งอุ้ม", "No new targets to carry"},
+        {"วาร์ปไปเก็บผู้เล่นที่ล้ม", "Teleport & Carry Downed Players"},
+        {"ช่วยผู้เล่นที่ล้ม", "Rescue Downed Players"},
+        {"ช่วยคนล้ม", "Rescue Downed"},
+
+        -- Visuals
+        {"มองหาผู้เล่นทั้งหมด", "Find All Players"},
+        {"มองหาผู้เล่นล้ม", "Find Downed Players"},
+        {"มองหาบอท", "Find Bots"},
+        {"ล้ม", "Downed"},
+        {"บอท", "Bot"},
+
+        -- Map
+        {"เปิดใช้งานขยายแมพ", "Enable Map Scaling"},
+        {"ขนาดแมพ", "Map Scale"},
+        {"คืนขนาดแมพเดิมแล้ว", "Original map size restored"},
+        {"คืนขนาดแมพเดิม", "Restore Original Map Size"},
+        {"วาร์ปไปบน Part สำเร็จ", "Teleported onto Part"},
+        {"วาร์ปไปบน Part", "Teleport onto Part"},
+        {"ไม่พบ Instance ชื่อ Map", "Map instance not found"},
+        {"ไม่พบชิ้นส่วนภายใน Map", "No parts inside Map"},
+        {"ไม่พบแมพ กรุณาเปิดระบบขยายแมพก่อน", "Map not found, enable Map Scaling first"},
+        {"หา Part สำหรับวาร์ปไม่เจอ", "No Part found to teleport onto"},
+        {"ไม่พบตัวละคร", "Character not found"},
+        {"ขยายแมพ x", "Map scaled x"},
+        {"และวาร์ปขึ้นบน Part แล้ว", "and teleported onto Part"},
+        {"ขยายแมพไม่สำเร็จ", "Map scaling failed"},
+
+        -- Farm
+        {"ยังไม่พบตัวละคร ลองเปิดอีกครั้งหลังเกิดใหม่", "Character not found, try again after respawning"},
+        {"เปิดฟาร์มเวลาแล้ว", "Farm Time ON"},
+        {"ปิดฟาร์มเวลาและคืนตำแหน่งเดิมแล้ว", "Farm Time OFF, position restored"},
+        {"ฟาร์มเวล", "Farm Time"},
+        {"ปิดกันโดนเตะแล้ว", "Anti-AFK OFF"},
+        {"เปิดกันโดนเตะแล้ว", "Anti-AFK ON"},
+        {"เชื่อมต่อระบบ AFK ไม่สำเร็จ", "Failed to connect Anti-AFK"},
+        {"กันโดนเตะ", "Anti-AFK"},
+
+        -- Event
+        {"เปิดออโต้ฟาร์มอีเว้นท์", "Auto Farm Event ON"},
+        {"ปิดออโต้ฟาร์มอีเว้นท์", "Auto Farm Event OFF"},
+        {"ออโต้ฟาร์มอีเว้นท์", "Auto Farm Event"},
+        {"เปิดออโต้วาร์ปไปหา NPC อีเว้นท์", "Auto Teleport to Event NPC ON"},
+        {"ปิดออโต้วาร์ปไปหา NPC อีเว้นท์", "Auto Teleport to Event NPC OFF"},
+        {"ออโต้วาร์ปไปหา NPC อีเว้นท์", "Auto Teleport to Event NPC"},
+        {"เจอ NPC: ", "Found NPC: "},
+        {"NPC หายแล้ว หยุดวาร์ปไปหา NPC", "NPC gone, stopped teleporting to NPC"},
+        {"เปิดมองหาโทเทม", "Find Totems ON"},
+        {"ปิดมองหาโทเทม", "Find Totems OFF"},
+        {"มองหาโทเทม", "Find Totems"},
+        {"เปิดมองหา NPC อีเว้นท์", "Find Event NPC ON"},
+        {"ปิดมองหา NPC อีเว้นท์", "Find Event NPC OFF"},
+        {"มองหา NPC อีเว้นท์", "Find Event NPC"},
+
+        -- ตัวเก็บกวาด (ต้องอยู่ท้ายสุด)
+        {" แล้ว", ""},
+        {"แล้ว", ""},
+    }
+
+    table.sort(D, function(A, B)
+        return #A[1] > #B[1]
+    end)
+
+    local Patterns = {}
+    for _, Entry in ipairs(D) do
+        Patterns[#Patterns + 1] = {
+            (Entry[1]:gsub("%p", "%%%0")),
+            (Entry[2]:gsub("%%", "%%%%")),
+        }
+    end
+
+    local THAI = "\224[\184\185]"
+    local Cache = {}
+
+    local function tr(Text)
+        if type(Text) ~= "string" or not Text:find(THAI) then
+            return Text
+        end
+
+        local Hit = Cache[Text]
+        if Hit then
+            return Hit
+        end
+
+        -- แก้ "เเ" (เ สองตัว) ให้เป็น "แ"
+        local Out = (Text:gsub("เเ", "แ"))
+        for _, P in ipairs(Patterns) do
+            Out = Out:gsub(P[1], P[2])
+        end
+
+        Cache[Text] = Out
+        return Out
+    end
+
+    ------------------------------------------------------------
+    -- 3) แปลอาร์กิวเมนต์ที่ส่งเข้า KOMAT (ไม่แตะ Callback / ลอจิก)
+    ------------------------------------------------------------
+    local function xlate(Value)
+        if type(Value) == "string" then
+            return tr(Value)
+        end
+
+        if type(Value) == "table" then
+            local New = {}
+            for K, V in pairs(Value) do
+                if type(V) == "string" or type(V) == "table" then
+                    New[K] = xlate(V)
+                else
+                    New[K] = V
+                end
+            end
+            return New
+        end
+
+        return Value
+    end
+
+    -- Dropdown: แสดงผลเป็นอังกฤษ แต่ส่งค่ากลับเข้า Callback เป็นค่าไทยเดิม
+    -- (เพราะลอจิกเดิมเทียบด้วยข้อความไทย เช่น "สปาวจุดเดิม", "กลางวัน")
+    local function xlateDropdown(Config)
+        if type(Config) ~= "table" then
+            return Config
+        end
+
+        local Reverse = {}
+        local New = {}
+
+        for K, V in pairs(Config) do
+            if K == "Options" or K == "Values" then
+                local List = {}
+                for I, Option in ipairs(V) do
+                    local Shown = tr(Option)
+                    List[I] = Shown
+                    if Shown ~= Option then
+                        Reverse[Shown] = Option
+                    end
+                end
+                New[K] = List
+            elseif type(V) == "string" or (type(V) == "table" and K ~= "Callback") then
+                New[K] = xlate(V)
+            else
+                New[K] = V
+            end
+        end
+
+        local Original = Config.Callback
+        if type(Original) == "function" then
+            New.Callback = function(Selected, ...)
+                if type(Selected) == "table" then
+                    local Mapped = {}
+                    for I, Item in pairs(Selected) do
+                        Mapped[I] = Reverse[Item] or Item
+                    end
+                    Selected = Mapped
+                else
+                    Selected = Reverse[Selected] or Selected
+                end
+                return Original(Selected, ...)
+            end
+        end
+
+        return New
+    end
+
+    local function Wrap(Object)
+        return setmetatable({}, {
+            __index = function(_, Key)
+                local Member = Object[Key]
+
+                if type(Member) ~= "function" then
+                    return Member
+                end
+
+                return function(_, ...)
+                    local Args = table.pack(...)
+
+                    for I = 1, Args.n do
+                        if Key == "CreateDropdown" and I == 1 then
+                            Args[I] = xlateDropdown(Args[I])
+                        else
+                            Args[I] = xlate(Args[I])
+                        end
+                    end
+
+                    local Result = table.pack(Member(Object, table.unpack(Args, 1, Args.n)))
+
+                    if Key == "CreateTab" and type(Result[1]) == "table" then
+                        Result[1] = Wrap(Result[1])
+                    end
+
+                    return table.unpack(Result, 1, Result.n)
+                end
+            end,
+
+            __newindex = function(_, Key, Value)
+                Object[Key] = Value
+            end,
+        })
+    end
+
+    KOMAT = setmetatable({}, {
+        __index = function(_, Key)
+            local Member = Real[Key]
+
+            if Key == "CreateWindow" and type(Member) == "function" then
+                return function(_, Config)
+                    return Wrap(Member(Real, xlate(Config)))
+                end
+            end
+
+            return Member
+        end,
+
+        __newindex = function(_, Key, Value)
+            Real[Key] = Value
+        end,
+    })
+
+    ------------------------------------------------------------
+    -- 4) แปลข้อความใน GUI ของสคริปต์เอง (ปุ่มลอย, ESP ฯลฯ)
+    ------------------------------------------------------------
+    local function Hook(Object)
+        if not (Object:IsA("TextLabel") or Object:IsA("TextButton")) then
+            return
+        end
+
+        if not Object.Text:find(THAI) then
+            local Gui = Object:FindFirstAncestorWhichIsA("ScreenGui")
+            if not (Gui and Gui.Name:sub(1, 6) == "KRYVEX") then
+                return
+            end
+        end
+
+        local function Fix()
+            local Current = Object.Text
+            if Current:find(THAI) then
+                local New = tr(Current)
+                if New ~= Current then
+                    Object.Text = New
+                end
+            end
+        end
+
+        Fix()
+        Object:GetPropertyChangedSignal("Text"):Connect(Fix)
+    end
+
+    local Roots = {}
+
+    local function AddRoot(Root)
+        if not Root then return end
+        for _, Existing in ipairs(Roots) do
+            if Existing == Root then return end
+        end
+        Roots[#Roots + 1] = Root
+    end
+
+    pcall(function()
+        if gethui then
+            AddRoot(gethui())
+        end
+    end)
+    pcall(function()
+        local _ = CoreGui.Name
+        AddRoot(CoreGui)
+    end)
+    AddRoot(LocalPlayer:WaitForChild("PlayerGui"))
+
+    for _, Root in ipairs(Roots) do
+        pcall(function()
+            for _, Descendant in ipairs(Root:GetDescendants()) do
+                pcall(Hook, Descendant)
+            end
+
+            Root.DescendantAdded:Connect(function(Descendant)
+                pcall(Hook, Descendant)
+            end)
+        end)
+    end
+    end -- InstallEnglish
+
+    if Lang == "en" then
+        InstallEnglish()
+    else
+        KOMAT = Real
+    end
+end
+
+--=========================================================
+-- จบ PRELUDE | ต่อด้วยสคริปต์เดิมได้เลย:
+-- local Window = KOMAT:CreateWindow({ ... })
+--=========================================================
+
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
