@@ -14,7 +14,7 @@ Title = "Evade",
 Subtitle = "KRYVEX HUB",
 
 -- normal / halloween / christmas / valentine / summer
-Theme = "halloween",
+Theme = "normal",
 
 -- true เปิดฉากแอนิเมชัน / false ปิด
 ThemeAnimation = true,
@@ -3216,326 +3216,6 @@ end
 
 end
 
---=====================================================
--- KRYVEX HUB | AUTO RESPAWN + SAVED POSITION
---=====================================================
-
-local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
-local Player = Players.LocalPlayer
-local Events = ReplicatedStorage:WaitForChild("Events")
-
-local SetPlayerMode = Events:WaitForChild("SetPlayerMode")
-local UpdateCharacterDataRegistry =
-Events:WaitForChild("UpdateCharacterDataRegistry")
-
-local AutoRespawnEnabled = false
-local RespawnMode = "สปาวปกติ"
-local RESPAWN_DELAY = 3
-
-local SavedRespawnCFrame = nil
-local CharacterConnections = {}
-local ProcessedCharacters = setmetatable({}, {__mode = "k"})
-local TeleportingToSavedPosition = false
-local TeleportToken = 0
-
---=====================================================
--- MENU CHECK
---=====================================================
-
-local function IsMenuVisible()
-local PlayerGui = Player:FindFirstChildOfClass("PlayerGui")
-
-return PlayerGui == nil
-or PlayerGui:FindFirstChild("Game") == nil
-
-end
-
---=====================================================
--- SAVE POSITION
---=====================================================
-
-local function SaveRespawnPosition(Character)
-local Root = Character:FindFirstChild("HumanoidRootPart")
-
-if not Root then
-return false
-end
-
-SavedRespawnCFrame = Root.CFrame
-return true
-
-end
-
---=====================================================
--- SEND RAGDOLL SIGNAL
---=====================================================
-
-local function SendRagdollSignal()
-local Success, ErrorMessage = pcall(function()
-local args = {
-{
-buffer.fromstring("\015\000"),
-"Ragdolling"
-}
-}
-
-UpdateCharacterDataRegistry:FireServer(unpack(args))
-end)
-
-if not Success then
-warn("[KRYVEX] Ragdoll signal failed:", ErrorMessage)
-end
-
-end
-
---=====================================================
--- RESTORE SAVED POSITION AFTER RESPAWN
---=====================================================
-
-local function RestoreSavedPosition(Character)
-if not AutoRespawnEnabled then return end
-if RespawnMode ~= "สปาวจุดเดิม" then return end
-if not SavedRespawnCFrame then return end
-
-TeleportToken += 1
-local MyToken = TeleportToken
-local TargetCFrame = SavedRespawnCFrame
-
-TeleportingToSavedPosition = true
-
-task.spawn(function()
-local Humanoid = Character:WaitForChild("Humanoid", 10)
-local Root = Character:WaitForChild("HumanoidRootPart", 10)
-
-if not Humanoid or not Root then
-TeleportingToSavedPosition = false
-return
-end
-
--- รอจนตัวละครเกิดและมีชีวิต
-local Deadline = os.clock() + 10
-
-while os.clock() < Deadline do
-if MyToken ~= TeleportToken then return end
-if not AutoRespawnEnabled then break end
-if RespawnMode ~= "สปาวจุดเดิม" then break end
-if Character ~= Player.Character then break end
-
-if Humanoid.Health > 0 and not IsMenuVisible() then      
-    break      
-end      
-
-task.wait(0.1)
-
-end
-
-if MyToken ~= TeleportToken then return end
-
-if not AutoRespawnEnabled
-or RespawnMode ~= "สปาวจุดเดิม"
-or Character ~= Player.Character
-or Humanoid.Health <= 0
-or IsMenuVisible() then
-
-TeleportingToSavedPosition = false      
-return
-
-end
-
--- ลองวาร์ปจนถึงจุด หรือครบจำนวนครั้ง
-for _ = 1, 10 do
-if MyToken ~= TeleportToken then return end
-if not AutoRespawnEnabled then break end
-if Character ~= Player.Character then break end
-if Humanoid.Health <= 0 then break end
-
-Root.CFrame = TargetCFrame      
-task.wait(0.15)      
-
-if (Root.Position - TargetCFrame.Position).Magnitude < 5 then      
-    break      
-end
-
-end
-
-if MyToken == TeleportToken then
-TeleportingToSavedPosition = false
-end
-
-end)
-
-end
-
---=====================================================
--- DEATH / AUTO RESPAWN
---=====================================================
-
-local function HandleDeath(Character, Humanoid)
-if not AutoRespawnEnabled then return end
-if ProcessedCharacters[Character] then return end
-if Humanoid.Health > 0 then return end
-
-ProcessedCharacters[Character] = true
-
--- เซฟตำแหน่งทันทีเมื่อเลือดเหลือ 0
-if RespawnMode == "สปาวจุดเดิม" then
-local Saved = SaveRespawnPosition(Character)
-
-if not Saved then
-warn("[KRYVEX] ไม่พบ HumanoidRootPart สำหรับบันทึกตำแหน่ง")
-end
-
-end
-
--- ส่งสัญญาณ Ragdolling
-SendRagdollSignal()
-
-task.delay(RESPAWN_DELAY, function()
-if not AutoRespawnEnabled then return end
-if Player.Character ~= Character then return end
-if not Humanoid.Parent or Humanoid.Health > 0 then return end
-
-if IsMenuVisible() then
-Window:Notify({
-Title = "KRYVEX HUB",
-Content = "พบ Menu GUI ยกเลิกการเกิดใหม่",
-Duration = 3
-})
-return
-end
-
-local Success, ErrorMessage = pcall(function()
-SetPlayerMode:FireServer(true)
-end)
-
-if not Success then
-warn("[KRYVEX] Respawn failed:", ErrorMessage)
-
-Window:Notify({      
-    Title = "KRYVEX HUB",      
-    Content = "ส่งสัญญาณเกิดใหม่ไม่สำเร็จ",      
-    Duration = 3      
-})
-
-end
-
-end)
-
-end
-
---=====================================================
--- CHARACTER SETUP
---=====================================================
-
-local function WatchCharacter(Character)
-task.spawn(function()
-local Humanoid = Character:WaitForChild("Humanoid", 10)
-if not Humanoid then return end
-
-local OldConnection = CharacterConnections[Character]
-
-if OldConnection then
-OldConnection:Disconnect()
-end
-
-CharacterConnections[Character] =
-Humanoid.HealthChanged:Connect(function(Health)
-if Health <= 0 then
-HandleDeath(Character, Humanoid)
-end
-end)
-
-if Humanoid.Health <= 0 then
-HandleDeath(Character, Humanoid)
-end
-
-end)
-
-end
-
-Player.CharacterAdded:Connect(function(Character)
-WatchCharacter(Character)
-
--- เรียกคืนตำแหน่งหลังเกิดใหม่
-RestoreSavedPosition(Character)
-
-end)
-
-if Player.Character then
-WatchCharacter(Player.Character)
-end
-
---=====================================================
--- UI
---=====================================================
-
-
-MainTab:CreateDropdown({
-Name = "เลือกการสปาว",
-Options = {
-"สปาวปกติ",
-"สปาวจุดเดิม"
-},
-Default = "สปาวปกติ",
-
-Callback = function(Value)
-local Option = Value
-
-if typeof(Value) == "table" then
-Option = Value[1]
-end
-
-if typeof(Option) ~= "string" then
-return
-end
-
-RespawnMode = Option
-
-Window:Notify({
-Title = "KRYVEX HUB",
-Content = "เลือก " .. Option .. " แล้ว",
-Duration = 3
-})
-
-end
-
-})
-
-MainTab:CreateToggle({
-Name = "ออโต้รีสปาว",
-Default = false,
-
-Callback = function(Value)
-AutoRespawnEnabled = Value
-
-if not Value then
-TeleportToken += 1
-TeleportingToSavedPosition = false
-else
-local Character = Player.Character
-local Humanoid = Character
-and Character:FindFirstChildOfClass("Humanoid")
-
-if Humanoid and Humanoid.Health <= 0 then      
-    HandleDeath(Character, Humanoid)      
-end
-
-end
-
-Window:Notify({
-Title = "KRYVEX HUB",
-Content = Value
-and ("เปิดออโต้รีสปาว | " .. RespawnMode)
-or "ปิดออโต้รีสปาว",
-Duration = 3
-})
-
-end
-
-})
-
 -- =========================================================
 -- KRYVEX HUB | REVERSE DASH
 -- แดชถอยหลัง + ปุ่มลอย
@@ -4385,202 +4065,6 @@ MainTab:CreateToggle({
 
 end
 
-do
-    local PlayersService = game:GetService("Players")
-    local ReplicatedStorage = game:GetService("ReplicatedStorage")
-    local RunService = game:GetService("RunService")
-
-    local LocalPlayer = PlayersService.LocalPlayer
-    local PlayerFolder = workspace:WaitForChild("Players")
-
-    local Interact = ReplicatedStorage
-        :WaitForChild("Events")
-        :WaitForChild("Interact")
-
-    local AutoCarryEnabled = false
-    local AutoCarryRange = 8
-
-    local AutoCarryTargetObject = nil
-    local AutoCarryConnection = nil
-    local AutoCarryFloatingHandle = nil
-
-    local IsCarrying = false
-    local LastCarryTime = 0
-    local CARRY_COOLDOWN = 1.5
-
-    local function GetCarryRoot(Model)
-        return Model:FindFirstChild("HumanoidRootPart") or Model.PrimaryPart
-    end
-
-    local function GetCarryHumanoid(Model)
-        return Model:FindFirstChildOfClass("Humanoid")
-    end
-
-    local function GetObjectTag(Object)
-        local Tag = Object:GetAttribute("Tag")
-            or Object:GetAttribute("ID")
-            or Object.Name
-
-        return tonumber(Tag) or Tag
-    end
-
-    local function FindNearestDowned()
-        local Character = LocalPlayer.Character
-        if not Character then
-            return nil, nil
-        end
-
-        local MyRoot = GetCarryRoot(Character)
-        if not MyRoot then
-            return nil, nil
-        end
-
-        local Target = nil
-        local TargetTag = nil
-        local Distance = AutoCarryRange
-
-        for _, Object in ipairs(PlayerFolder:GetChildren()) do
-            if Object ~= Character and Object.Name ~= LocalPlayer.Name then
-                local Humanoid = GetCarryHumanoid(Object)
-                local Root = GetCarryRoot(Object)
-                local Tag = GetObjectTag(Object)
-
-                if Humanoid and Root and Tag and Humanoid.Health <= 0 then
-                    local CurrentDistance =
-                        (MyRoot.Position - Root.Position).Magnitude
-
-                    if CurrentDistance <= Distance then
-                        Distance = CurrentDistance
-                        Target = Object
-                        TargetTag = Tag
-                    end
-                end
-            end
-        end
-
-        return Target, TargetTag
-    end
-
-    local function DoAutoCarry()
-        if IsCarrying then
-            if AutoCarryTargetObject and AutoCarryTargetObject.Parent then
-                local Humanoid = GetCarryHumanoid(AutoCarryTargetObject)
-
-                if Humanoid and Humanoid.Health <= 0 then
-                    return
-                end
-            end
-
-            IsCarrying = false
-            AutoCarryTargetObject = nil
-        end
-
-        if tick() - LastCarryTime < CARRY_COOLDOWN then
-            return
-        end
-
-        local Target, Tag = FindNearestDowned()
-
-        if Target and Tag then
-            IsCarrying = true
-            AutoCarryTargetObject = Target
-            LastCarryTime = tick()
-
-            pcall(function()
-                Interact:FireServer("Carry", Tag)
-            end)
-        end
-    end
-
-    local function StartAutoCarry()
-        if AutoCarryConnection then
-            AutoCarryConnection:Disconnect()
-            AutoCarryConnection = nil
-        end
-
-        AutoCarryConnection = RunService.Heartbeat:Connect(function()
-            if not AutoCarryEnabled then
-                return
-            end
-
-            DoAutoCarry()
-        end)
-    end
-
-    local function StopAutoCarry()
-        if AutoCarryConnection then
-            AutoCarryConnection:Disconnect()
-            AutoCarryConnection = nil
-        end
-
-        AutoCarryTargetObject = nil
-        IsCarrying = false
-    end
-
-    local function SetAutoCarry(Value)
-        AutoCarryEnabled = Value
-
-        if Value then
-            AutoCarryTargetObject = nil
-            IsCarrying = false
-            StartAutoCarry()
-        else
-            StopAutoCarry()
-        end
-    end
-
-
-    MainTab:CreateToggle({
-        Name = "ออโต้อุ้ม",
-        Default = false,
-
-        Callback = function(Value)
-            SetAutoCarry(Value)
-
-            Window:Notify({
-                Title = "KRYVEX HUB",
-                Content = Value and "เปิดออโต้อุ้มแล้ว" or "ปิดออโต้อุ้มแล้ว",
-                Duration = 3,
-            })
-        end,
-    })
-
-    MainTab:CreateToggle({
-        Name = "ออโต้อุ้ม (ปุ่มลอย)",
-        Default = false,
-
-        Callback = function(Value)
-            if Value then
-                if AutoCarryFloatingHandle then
-                    AutoCarryFloatingHandle:Destroy()
-                    AutoCarryFloatingHandle = nil
-                end
-
-                AutoCarryFloatingHandle = CreateFloatingButton({
-                    Name = "ออโต้อุ้ม",
-                    Mode = "Toggle",
-                    OnText = "เปิด",
-                    OffText = "ปิด",
-
-                    Callback = function(Active)
-                        SetAutoCarry(Active)
-                    end,
-                })
-            else
-                if AutoCarryFloatingHandle then
-                    AutoCarryFloatingHandle:Destroy()
-                    AutoCarryFloatingHandle = nil
-                end
-
-                if RemoveFloatingButton then
-                    RemoveFloatingButton("ออโต้อุ้ม")
-                end
-
-                SetAutoCarry(false)
-            end
-        end,
-    })
-end
 
 do
     local Players = game:GetService("Players")
@@ -5179,7 +4663,8 @@ do
     local PlayerFolder = workspace:WaitForChild("Players")
 
     local Interact = ReplicatedStorage
-        :WaitForChild("Events")
+        :WaitForChild("Remotes")
+        :WaitForChild("Character")
         :WaitForChild("Interact")
 
     local AutoCarryRange = 25
@@ -5367,35 +4852,6 @@ do
     })
 end
 
-MainTab:CreateButton({
-    Name = "เกิดใหม่",
-    Description = "ส่งคำสั่งเกิดใหม่",
-
-    Callback = function()
-        local Success, ErrorMessage = pcall(function()
-            game:GetService("ReplicatedStorage")
-                :WaitForChild("Events")
-                :WaitForChild("SetPlayerMode")
-                :FireServer(true)
-        end)
-
-        if Success then
-            Window:Notify({
-                Title = "KRYVEX HUB",
-                Content = "ส่งคำสั่งเกิดใหม่แล้ว",
-                Duration = 3,
-            })
-        else
-            warn("[KRYVEX] เกิดใหม่ล้มเหลว:", ErrorMessage)
-
-            Window:Notify({
-                Title = "KRYVEX HUB",
-                Content = "ทำงานไม่สำเร็จ ตรวจสอบ Console",
-                Duration = 3,
-            })
-        end
-    end,
-})
 
 -- KRYVEX OtherTab systems add-on
 -- Append after the new script has declared OtherTab, Window, LocalPlayer and RunService.
@@ -6595,7 +6051,8 @@ do
     local PlayersService = game:GetService("Players")
     local ReplicatedStorage = game:GetService("ReplicatedStorage")
     local Interact = ReplicatedStorage
-        :WaitForChild("Events")
+        :WaitForChild("Remotes")
+        :WaitForChild("Character")
         :WaitForChild("Interact")
 
 local function GetTeleportRoot(Model)
@@ -7000,7 +6457,8 @@ do
 
     local Player = Players.LocalPlayer
     local Interact = ReplicatedStorage
-        :WaitForChild("Events")
+        :WaitForChild("Remotes")
+        :WaitForChild("Character")
         :WaitForChild("Interact")
 
     local RescueBusy = false
@@ -10249,3 +9707,621 @@ SettingsTab:CreateButton({
         -- ไม่มีการทำงาน
     end
 })
+
+do
+    local Players = game:GetService("Players")
+    local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+    local LocalPlayer = Players.LocalPlayer
+
+    local CARRY_RANGE = 8
+    local SCAN_INTERVAL = 0.25
+    local CARRY_COOLDOWN = 1.5
+
+    local AutoCarryEnabled = false
+    local CarryGeneration = 0
+    local LastCarryTime = 0
+    local AutoCarryFloatingHandle = nil
+    local RescueFloatingHandle = nil
+
+    -- ใช้ล็อกร่วมกันทั้ง 5 คอนโทรล
+    local AttemptedTargets = setmetatable({}, { __mode = "k" })
+
+    -- ค้นหาแบบไม่รอค้าง ถ้าเกมเปลี่ยน path UI ก็ยังสร้างต่อได้
+    local function GetInteractRemote()
+        local Remotes = ReplicatedStorage:FindFirstChild("Remotes")
+        local CharacterRemotes = Remotes and Remotes:FindFirstChild("Character")
+        local Interact = CharacterRemotes and CharacterRemotes:FindFirstChild("Interact")
+
+        if Interact and Interact:IsA("RemoteEvent") then
+            return Interact
+        end
+
+        return nil
+    end
+
+    local function GetRoot(Model)
+        return Model:FindFirstChild("HumanoidRootPart", true)
+            or Model.PrimaryPart
+    end
+
+    local function GetHumanoid(Model)
+        return Model:FindFirstChildWhichIsA("Humanoid", true)
+    end
+
+    local function GetTag(Model)
+        local Tag = Model:GetAttribute("Tag")
+            or Model:GetAttribute("ID")
+            or Model.Name
+
+        return tonumber(Tag) or Tag
+    end
+
+    local function CleanupAttemptedTargets()
+        for Model in pairs(AttemptedTargets) do
+            if not Model.Parent then
+                AttemptedTargets[Model] = nil
+            else
+                local Humanoid = GetHumanoid(Model)
+                if Humanoid and Humanoid.Health > 0 then
+                    AttemptedTargets[Model] = nil
+                end
+            end
+        end
+    end
+
+    local function TryCarryOnce(Target, Tag)
+        CleanupAttemptedTargets()
+
+        if not Target or AttemptedTargets[Target] then
+            return false, "already-attempted"
+        end
+
+        local Humanoid = GetHumanoid(Target)
+        if not Humanoid or Humanoid.Health > 0 then
+            return false, "not-downed"
+        end
+
+        local Remote = GetInteractRemote()
+        if not Remote then
+            return false, "remote-not-found"
+        end
+
+        Tag = Tag or GetTag(Target)
+        if Tag == nil or Tag == "" then
+            return false, "missing-tag"
+        end
+
+        -- ล็อกก่อนส่ง ป้องกันคำสั่งซ้ำที่อาจกลายเป็นปล่อย
+        AttemptedTargets[Target] = true
+
+        local Sent, ErrorMessage = pcall(function()
+            Remote:FireServer("Carry", Tag)
+        end)
+
+        if not Sent then
+            AttemptedTargets[Target] = nil
+            warn("[KRYVEX Carry]", ErrorMessage)
+            return false, "send-failed"
+        end
+
+        return true, "sent"
+    end
+
+    local function FindDownedTargets(MaxDistance, Origin)
+        CleanupAttemptedTargets()
+
+        local Folder = workspace:FindFirstChild("Players")
+        local Character = LocalPlayer.Character
+        local MyRoot = Origin or (Character and GetRoot(Character))
+
+        if not Folder or not MyRoot then
+            return {}
+        end
+
+        local Targets = {}
+
+        for _, Model in ipairs(Folder:GetChildren()) do
+            if Model:IsA("Model")
+                and Model ~= Character
+                and Model.Name ~= LocalPlayer.Name
+                and not AttemptedTargets[Model] then
+
+                local Humanoid = GetHumanoid(Model)
+                local Root = GetRoot(Model)
+                local Tag = GetTag(Model)
+
+                if Humanoid and Root and Tag and Humanoid.Health <= 0 then
+                    local Distance = (MyRoot.Position - Root.Position).Magnitude
+
+                    if not MaxDistance or Distance <= MaxDistance then
+                        table.insert(Targets, {
+                            Model = Model,
+                            Humanoid = Humanoid,
+                            Root = Root,
+                            Tag = Tag,
+                            Distance = Distance,
+                        })
+                    end
+                end
+            end
+        end
+
+        table.sort(Targets, function(A, B)
+            return A.Distance < B.Distance
+        end)
+
+        return Targets
+    end
+
+    local function SetAutoCarry(Value)
+        if AutoCarryEnabled == Value then
+            return
+        end
+
+        AutoCarryEnabled = Value
+        CarryGeneration += 1
+        local MyGeneration = CarryGeneration
+
+        if not Value then
+            return
+        end
+
+        task.spawn(function()
+            while AutoCarryEnabled and MyGeneration == CarryGeneration do
+                if os.clock() - LastCarryTime >= CARRY_COOLDOWN then
+                    local Targets = FindDownedTargets(CARRY_RANGE)
+                    local Target = Targets[1]
+
+                    if Target then
+                        LastCarryTime = os.clock()
+                        TryCarryOnce(Target.Model, Target.Tag)
+                    end
+                end
+
+                task.wait(SCAN_INTERVAL)
+            end
+        end)
+    end
+
+    local function TeleportToNearestDowned()
+        local Character = LocalPlayer.Character
+        local Root = Character and GetRoot(Character)
+
+        if not Character or not Root then
+            return
+        end
+
+        local Targets = FindDownedTargets(nil, Root)
+        local Target = Targets[1]
+
+        if not Target then
+            Window:Notify({
+                Title = "KRYVEX HUB",
+                Content = "ไม่พบเป้าหมายใหม่ที่ยังไม่ได้สั่งอุ้ม",
+                Duration = 3,
+            })
+            return
+        end
+
+        local OriginalCFrame = Root.CFrame
+        Root.CFrame = Target.Root.CFrame
+        task.wait(0.2)
+
+        TryCarryOnce(Target.Model, Target.Tag)
+        task.wait(1)
+
+        if LocalPlayer.Character == Character and Root.Parent then
+            Root.CFrame = OriginalCFrame
+        end
+    end
+
+    local function RescueDownedPlayers()
+        local Character = LocalPlayer.Character
+        local Root = Character and GetRoot(Character)
+
+        if not Character or not Root then
+            return
+        end
+
+        local OriginalCFrame = Root.CFrame
+        local Targets = FindDownedTargets(nil, Root)
+
+        if #Targets == 0 then
+            Window:Notify({
+                Title = "KRYVEX HUB",
+                Content = "ไม่พบเป้าหมายใหม่ที่ยังไม่ได้สั่งอุ้ม",
+                Duration = 3,
+            })
+            return
+        end
+
+        for _, Info in ipairs(Targets) do
+            if LocalPlayer.Character ~= Character then
+                break
+            end
+
+            if Info.Model.Parent
+                and Info.Humanoid.Parent
+                and Info.Humanoid.Health <= 0
+                and not AttemptedTargets[Info.Model] then
+
+                Root.CFrame = Info.Root.CFrame * CFrame.new(0, 0, 3)
+                task.wait(0.2)
+
+                local Sent = TryCarryOnce(Info.Model, Info.Tag)
+                if Sent then
+                    break
+                end
+            end
+        end
+
+        if LocalPlayer.Character == Character and Root.Parent then
+            Root.CFrame = OriginalCFrame
+        end
+    end
+
+    -- 1) ออโต้อุ้มในเมนู
+    MainTab:CreateToggle({
+        Name = "ออโต้อุ้ม",
+        Default = false,
+        Callback = function(Value)
+            SetAutoCarry(Value)
+        end,
+    })
+
+    -- 2) ตัวเลือกเปิดปุ่มลอยออโต้อุ้ม
+    MainTab:CreateToggle({
+        Name = "ออโต้อุ้ม (ปุ่มลอย)",
+        Default = false,
+        Callback = function(Value)
+            if Value then
+                if AutoCarryFloatingHandle then
+                    AutoCarryFloatingHandle:Destroy()
+                end
+
+                AutoCarryFloatingHandle = CreateFloatingButton({
+                    Name = "ออโต้อุ้ม",
+                    Mode = "Toggle",
+                    OnText = "เปิด",
+                    OffText = "ปิด",
+                    Callback = function(Active)
+                        SetAutoCarry(Active)
+                    end,
+                })
+            else
+                if AutoCarryFloatingHandle then
+                    AutoCarryFloatingHandle:Destroy()
+                    AutoCarryFloatingHandle = nil
+                end
+
+                if RemoveFloatingButton then
+                    RemoveFloatingButton("ออโต้อุ้ม")
+                end
+
+                SetAutoCarry(false)
+            end
+        end,
+    })
+
+    -- 3) วาร์ปไปหาผู้เล่นล้ม 1 วินาที
+    TeleportTab:CreateButton({
+        Name = "วาร์ปไปหาผู้เล่นล้ม 1s",
+        Callback = TeleportToNearestDowned,
+    })
+
+    -- 4) วาร์ปไปเก็บผู้เล่นที่ล้ม
+    TeleportTab:CreateButton({
+        Name = "วาร์ปไปเก็บผู้เล่นที่ล้ม",
+        Callback = RescueDownedPlayers,
+    })
+
+    -- 5) ตัวเลือกเปิดปุ่มลอยช่วยผู้เล่นที่ล้ม
+    TeleportTab:CreateToggle({
+        Name = "ช่วยผู้เล่นที่ล้ม (ปุ่มลอย)",
+        Default = false,
+        Callback = function(Value)
+            if Value then
+                if RescueFloatingHandle then
+                    RescueFloatingHandle:Destroy()
+                end
+
+                RescueFloatingHandle = CreateFloatingButton({
+                    Name = "ช่วยคนล้ม",
+                    Mode = "Button",
+                    OnText = "ช่วยคนล้ม",
+                    OffText = "ช่วยคนล้ม",
+                    Callback = RescueDownedPlayers,
+                })
+            else
+                if RescueFloatingHandle then
+                    RescueFloatingHandle:Destroy()
+                    RescueFloatingHandle = nil
+                end
+
+                if RemoveFloatingButton then
+                    RemoveFloatingButton("ช่วยคนล้ม")
+                end
+            end
+        end,
+    })
+end
+
+do
+    local Players = game:GetService("Players")
+    local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+    local Player = Players.LocalPlayer
+    local AutoRespawnEnabled = false
+    local RespawnMode = "สปาวปกติ"
+    local RespawnDelay = 3
+    local SavedRespawnCFrame = nil
+
+    local RespawnToken = 0
+    local ProcessedCharacters = setmetatable({}, { __mode = "k" })
+    local CharacterConnections = setmetatable({}, { __mode = "k" })
+
+    -- ส่งคำสั่งเกิดใหม่ตามตัวอย่างที่มึงให้
+    local function SendRespawnRequest()
+        local Success, ErrorMessage = pcall(function()
+            local args = {
+                true
+            }
+
+            ReplicatedStorage
+                :WaitForChild("Remotes")
+                :WaitForChild("Session")
+                :WaitForChild("SetPlayerMode")
+                :FireServer(unpack(args))
+        end)
+
+        if not Success then
+            return false, ErrorMessage
+        end
+
+        return true
+    end
+
+    local function IsMenuVisible()
+        local PlayerGui = Player:FindFirstChildOfClass("PlayerGui")
+
+        return PlayerGui == nil
+            or PlayerGui:FindFirstChild("Game") == nil
+    end
+
+    -- ส่ง Ragdoll signal ถ้า Remote นี้มีอยู่
+    local function SendRagdollSignal()
+        local Events = ReplicatedStorage:FindFirstChild("Events")
+        local Remote = Events
+            and Events:FindFirstChild("UpdateCharacterDataRegistry")
+
+        if not Remote then
+            return
+        end
+
+        pcall(function()
+            local args = {
+                {
+                    buffer.fromstring("\015\000"),
+                    "Ragdolling"
+                }
+            }
+
+            Remote:FireServer(unpack(args))
+        end)
+    end
+
+    local function RestoreSavedPosition(Character)
+        if not AutoRespawnEnabled
+            or RespawnMode ~= "สปาวจุดเดิม"
+            or not SavedRespawnCFrame then
+            return
+        end
+
+        RespawnToken += 1
+        local MyToken = RespawnToken
+        local TargetCFrame = SavedRespawnCFrame
+
+        task.spawn(function()
+            local Humanoid = Character:WaitForChild("Humanoid", 10)
+            local Root = Character:WaitForChild("HumanoidRootPart", 10)
+
+            if not Humanoid or not Root then
+                return
+            end
+
+            local Deadline = os.clock() + 10
+
+            while os.clock() < Deadline do
+                if MyToken ~= RespawnToken
+                    or not AutoRespawnEnabled
+                    or RespawnMode ~= "สปาวจุดเดิม"
+                    or Character ~= Player.Character then
+                    return
+                end
+
+                if Humanoid.Health > 0 and not IsMenuVisible() then
+                    break
+                end
+
+                task.wait(0.1)
+            end
+
+            if MyToken ~= RespawnToken
+                or not AutoRespawnEnabled
+                or RespawnMode ~= "สปาวจุดเดิม"
+                or Character ~= Player.Character
+                or Humanoid.Health <= 0
+                or IsMenuVisible() then
+                return
+            end
+
+            for _ = 1, 10 do
+                if MyToken ~= RespawnToken
+                    or not AutoRespawnEnabled
+                    or Character ~= Player.Character
+                    or Humanoid.Health <= 0 then
+                    break
+                end
+
+                Root.CFrame = TargetCFrame
+                task.wait(0.15)
+
+                if (Root.Position - TargetCFrame.Position).Magnitude < 5 then
+                    break
+                end
+            end
+        end)
+    end
+
+    local function HandleDeath(Character, Humanoid)
+        if not AutoRespawnEnabled
+            or ProcessedCharacters[Character]
+            or Humanoid.Health > 0 then
+            return
+        end
+
+        ProcessedCharacters[Character] = true
+
+        if RespawnMode == "สปาวจุดเดิม" then
+            local Root = Character:FindFirstChild("HumanoidRootPart")
+
+            if Root then
+                SavedRespawnCFrame = Root.CFrame
+            end
+        end
+
+        SendRagdollSignal()
+
+        task.delay(RespawnDelay, function()
+            if not AutoRespawnEnabled
+                or Player.Character ~= Character
+                or not Humanoid.Parent
+                or Humanoid.Health > 0
+                or IsMenuVisible() then
+                return
+            end
+
+            local Success, ErrorMessage = SendRespawnRequest()
+
+            if not Success then
+                warn("[KRYVEX Auto Respawn]", ErrorMessage)
+
+                Window:Notify({
+                    Title = "KRYVEX HUB",
+                    Content = "ส่งสัญญาณเกิดใหม่ไม่สำเร็จ",
+                    Duration = 3,
+                })
+            end
+        end)
+    end
+
+    local function WatchCharacter(Character)
+        task.spawn(function()
+            local Humanoid = Character:WaitForChild("Humanoid", 10)
+
+            if not Humanoid then
+                return
+            end
+
+            local OldConnection = CharacterConnections[Character]
+
+            if OldConnection then
+                OldConnection:Disconnect()
+            end
+
+            CharacterConnections[Character] =
+                Humanoid.HealthChanged:Connect(function(Health)
+                    if Health <= 0 then
+                        HandleDeath(Character, Humanoid)
+                    end
+                end)
+
+            if Humanoid.Health <= 0 then
+                HandleDeath(Character, Humanoid)
+            end
+        end)
+    end
+
+    Player.CharacterAdded:Connect(function(Character)
+        WatchCharacter(Character)
+        RestoreSavedPosition(Character)
+    end)
+
+    if Player.Character then
+        WatchCharacter(Player.Character)
+    end
+
+    MainTab:CreateDropdown({
+        Name = "เลือกการสปาว",
+        Options = {
+            "สปาวปกติ",
+            "สปาวจุดเดิม",
+        },
+        Default = "สปาวปกติ",
+
+        Callback = function(Value)
+            if typeof(Value) == "table" then
+                Value = Value[1]
+            end
+
+            if typeof(Value) == "string" then
+                RespawnMode = Value
+            end
+        end,
+    })
+
+    MainTab:CreateToggle({
+        Name = "ออโต้รีสปาว",
+        Default = false,
+
+        Callback = function(Value)
+            AutoRespawnEnabled = Value
+
+            if not Value then
+                RespawnToken += 1
+            else
+                local Character = Player.Character
+                local Humanoid = Character
+                    and Character:FindFirstChildOfClass("Humanoid")
+
+                if Humanoid and Humanoid.Health <= 0 then
+                    HandleDeath(Character, Humanoid)
+                end
+            end
+
+            Window:Notify({
+                Title = "KRYVEX HUB",
+                Content = Value
+                    and ("เปิดออโต้รีสปาว | " .. RespawnMode)
+                    or "ปิดออโต้รีสปาว",
+                Duration = 3,
+            })
+        end,
+    })
+
+    MainTab:CreateButton({
+        Name = "เกิดใหม่",
+        Description = "ส่งคำสั่งเกิดใหม่",
+
+        Callback = function()
+            local Success, ErrorMessage = SendRespawnRequest()
+
+            if Success then
+                Window:Notify({
+                    Title = "KRYVEX HUB",
+                    Content = "ส่งคำสั่งเกิดใหม่แล้ว",
+                    Duration = 3,
+                })
+            else
+                warn("[KRYVEX Respawn]", ErrorMessage)
+
+                Window:Notify({
+                    Title = "KRYVEX HUB",
+                    Content = "ส่งคำสั่งไม่สำเร็จ ตรวจสอบ Console",
+                    Duration = 3,
+                })
+            end
+        end,
+    })
+end
