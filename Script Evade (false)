@@ -1,14 +1,3 @@
---=========================================================
--- KRYVEX HUB | LANGUAGE PICKER + I18N LAYER
--- วางบล็อกนี้ "บนสุด" ของสคริปต์เดิม แล้วลบบล็อกเดิมนี้ออก:
---
---   local KOMAT = loadstring(game:HttpGet(
---   "https://raw.githubusercontent.com/komayma273-cyber/Script-Evade/refs/heads/main/TAS"
---   ))()
---
--- ที่เหลือของสคริปต์เดิม (ตั้งแต่ local Window = KOMAT:CreateWindow ลงไป) ไม่ต้องแก้อะไรเลย
---=========================================================
-
 local KOMAT
 
 do
