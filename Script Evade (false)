@@ -5,6 +5,14 @@ local RunService = game:GetService("RunService")
 
 local LocalPlayer = Players.LocalPlayer
 
+-- ปิดอินสแตนซ์ Infinity Slide จากสคริปต์เก่าที่อาจยังค้างอยู่
+local StartupEnv = getgenv()
+if type(StartupEnv.KRYVEX_SlideCleanup) == "function" then
+    pcall(StartupEnv.KRYVEX_SlideCleanup)
+    StartupEnv.KRYVEX_SlideCleanup = nil
+end
+StartupEnv.KRYVEX_SlideSpeedOverrideActive = nil
+
 local KOMAT = loadstring(game:HttpGet(
 "https://raw.githubusercontent.com/komayma273-cyber/Script-Evade/refs/heads/main/TAS"
 ))()
@@ -40,6 +48,7 @@ AirStrafeAcceleration = 187
 
 getgenv().ApplyMode = "Optimized"
 getgenv().AutoApplySettings = true
+getgenv().KRYVEX_PreserveSpeedBoost = true
 
 local MAX_VALUE = 30000
 
@@ -76,6 +85,22 @@ SprintAcceleration = true
 
 local cachedTables
 
+-- จดค่า Speed ดั้งเดิมต่อ table เพื่อแยกการเปลี่ยนชั่วคราวออกจากการคืนค่าเกม
+local SpeedMonitorEnv = getgenv()
+SpeedMonitorEnv.KRYVEX_SpeedBaselineMonitorGeneration =
+    (SpeedMonitorEnv.KRYVEX_SpeedBaselineMonitorGeneration or 0) + 1
+local SpeedMonitorGeneration = SpeedMonitorEnv.KRYVEX_SpeedBaselineMonitorGeneration
+
+local NativeSpeedByTable = SpeedMonitorEnv.KRYVEX_NativeSpeedByTable
+if type(NativeSpeedByTable) ~= "table" then
+    NativeSpeedByTable = setmetatable({}, { __mode = "k" })
+    SpeedMonitorEnv.KRYVEX_NativeSpeedByTable = NativeSpeedByTable
+end
+
+local NativeReturnSince = setmetatable({}, { __mode = "k" })
+local SPEED_RESTORE_STABLE_TIME = 2.5
+local SPEED_COMPARE_EPSILON = 0.001
+
 local function getMatchingTables()
 -- ใช้ cache ไปจนกว่าจะมีการ invalidate (เปลี่ยนค่า/เกิดใหม่)
 -- ป้องกันการสแกน getgc(true) ทั้งเกมซ้ำทุกไม่กี่วินาที
@@ -104,7 +129,9 @@ end
 
 end
 
+if #Result > 0 then
 cachedTables = Result
+end
 return Result
 
 end
@@ -116,12 +143,15 @@ local Tables = getMatchingTables()
 for _, Table in ipairs(Tables) do
 pcall(function()
 if Mode == "Not Optimized" then
+if getgenv().KRYVEX_PreserveSpeedBoost ~= true then
 Table.Speed = currentSettings.Speed
+end
 Table.JumpCap = currentSettings.JumpCap
 Table.AirStrafeAcceleration =
 currentSettings.AirStrafeAcceleration
 else
-if Table.Speed ~= currentSettings.Speed then
+if getgenv().KRYVEX_PreserveSpeedBoost ~= true
+and Table.Speed ~= currentSettings.Speed then
 Table.Speed = currentSettings.Speed
 end
 
@@ -142,6 +172,106 @@ end)
 
 end
 
+end
+
+local function applySpeedBaseline()
+    local Tables = getMatchingTables()
+    local Applied = 0
+
+    for _, Table in ipairs(Tables) do
+        local CurrentSpeed = rawget(Table, "Speed")
+        if NativeSpeedByTable[Table] == nil and type(CurrentSpeed) == "number" then
+            NativeSpeedByTable[Table] = CurrentSpeed
+        end
+
+        local Success = pcall(function()
+            Table.Speed = currentSettings.Speed
+        end)
+        if Success then
+            Applied += 1
+        end
+    end
+
+    return Applied > 0, Applied
+end
+
+local function RefreshNativeSpeedCache(Tables)
+    for _, Table in ipairs(Tables) do
+        local CurrentSpeed = rawget(Table, "Speed")
+        if type(CurrentSpeed) == "number" then
+            NativeSpeedByTable[Table] = CurrentSpeed
+            NativeReturnSince[Table] = nil
+        end
+    end
+end
+
+-- ถ้าเกมคืน Speed เป็นค่าเดิมหลังบัฟหมด ให้รอค่านิ่งก่อนคืนค่าฐาน
+-- อ่านเฉพาะ cache ที่มีอยู่ ไม่เรียก getgc ซ้ำในลูปนี้
+local function StartSpeedBaselineMonitor()
+    task.spawn(function()
+        while SpeedMonitorEnv.KRYVEX_SpeedBaselineMonitorGeneration
+            == SpeedMonitorGeneration do
+            if getgenv().KRYVEX_PreserveSpeedBoost == true and cachedTables then
+                for _, Table in ipairs(cachedTables) do
+                    local CurrentSpeed = rawget(Table, "Speed")
+                    local NativeSpeed = NativeSpeedByTable[Table]
+
+                    if type(CurrentSpeed) == "number"
+                        and type(NativeSpeed) == "number"
+                        and math.abs(CurrentSpeed - NativeSpeed) <= SPEED_COMPARE_EPSILON
+                        and math.abs(currentSettings.Speed - NativeSpeed) > SPEED_COMPARE_EPSILON then
+
+                        local Since = NativeReturnSince[Table]
+                        if not Since then
+                            NativeReturnSince[Table] = os.clock()
+                        elseif os.clock() - Since >= SPEED_RESTORE_STABLE_TIME then
+                            pcall(function()
+                                local LatestSpeed = rawget(Table, "Speed")
+                                if type(LatestSpeed) == "number"
+                                    and math.abs(LatestSpeed - NativeSpeed) <= SPEED_COMPARE_EPSILON
+                                    and getgenv().KRYVEX_PreserveSpeedBoost == true then
+                                    Table.Speed = currentSettings.Speed
+                                end
+                            end)
+                            NativeReturnSince[Table] = nil
+                        end
+                    else
+                        NativeReturnSince[Table] = nil
+                    end
+                end
+            end
+
+            task.wait(1)
+        end
+    end)
+end
+
+StartSpeedBaselineMonitor()
+
+-- ส่ง SetPlayerMode(true) เพียงครั้งเดียว เมื่อผู้ใช้เปลี่ยน Speed ครั้งแรก
+local SpeedModeSignalSent = false
+local SpeedBaselineReapplyPending = false
+local function SendSpeedModeSignalOnce()
+    if SpeedModeSignalSent then
+        return
+    end
+
+    local RequestWithReturn = getgenv().KRYVEX_SendSpeedModeWithReturnPosition
+    if type(RequestWithReturn) ~= "function" then
+        -- UI อาจถูกกดก่อนบล็อก Auto Respawn จะประกาศ bridge; อนุญาตให้ลองใหม่เมื่อมีการแก้ค่าอีกครั้ง
+        warn("[KRYVEX Speed] ระบบคืนตำแหน่งยังไม่พร้อม")
+        return
+    end
+
+    -- ล็อกก่อนเรียก เพื่อไม่ให้การปรับครั้งถัดไปส่งซ้ำ
+    SpeedModeSignalSent = true
+
+    local CallSuccess, RequestSuccess, ErrorMessage = pcall(RequestWithReturn)
+    if not CallSuccess then
+        warn("[KRYVEX Speed] เรียก SetPlayerMode ไม่สำเร็จ:", RequestSuccess)
+    elseif RequestSuccess == false then
+        warn("[KRYVEX Speed] ส่ง SetPlayerMode ไม่สำเร็จ:", ErrorMessage)
+    end
 end
 
 -- ปรับค่าเป็นรอบละ 1 วินาที แทนการเขียนซ้ำทุกเฟรม
@@ -170,12 +300,44 @@ Callback = function(Value)
 local Number = tonumber(Value)
 
 if Number then
-currentSettings.Speed = safe(Number)
-applyToTables()
+local NewSpeed = safe(Number)
+local SpeedChanged = NewSpeed ~= currentSettings.Speed
+
+currentSettings.Speed = NewSpeed
+cachedTables = nil
+
+if getgenv().KRYVEX_PreserveSpeedBoost == true then
+    applySpeedBaseline()
+else
+    applyToTables()
+end
+
+if SpeedChanged then
+    SpeedBaselineReapplyPending = true
+    SendSpeedModeSignalOnce()
+end
 end
 
 end
 
+})
+
+SettingsTab:CreateToggle({
+    Name = "รักษาบัฟความเร็ว",
+    Default = true,
+    Callback = function(Value)
+        getgenv().KRYVEX_PreserveSpeedBoost = Value and true or false
+        cachedTables = nil
+
+        if getgenv().KRYVEX_PreserveSpeedBoost then
+            -- เปิดรักษาบัฟ: อย่าเขียนทับ Speed ปัจจุบัน แต่อัปเดตค่าอื่นได้
+            applyToTables()
+        else
+            -- ปิดรักษาบัฟ: กลับไปคุม Speed ตามค่าที่กรอก
+            applySpeedBaseline()
+            applyToTables()
+        end
+    end,
 })
 
 SettingsTab:CreateInput({
@@ -257,6 +419,7 @@ currentSettings.AirStrafeAcceleration = 187
 
 cachedTables = nil
 applyToTables()
+applySpeedBaseline()
 
 Window:Notify({
 Title = "KRYVEX HUB",
@@ -268,16 +431,59 @@ end
 
 })
 
-LocalPlayer.CharacterAdded:Connect(function()
-task.wait(1)
+local SpeedRespawnEnv = getgenv()
+SpeedRespawnEnv.KRYVEX_SpeedRespawnGeneration =
+    (SpeedRespawnEnv.KRYVEX_SpeedRespawnGeneration or 0) + 1
+local SpeedRespawnGeneration = SpeedRespawnEnv.KRYVEX_SpeedRespawnGeneration
 
-cachedTables = nil
+local function ApplySpeedAfterCharacter(Character)
+    task.spawn(function()
+        local Humanoid = Character:WaitForChild("Humanoid", 10)
+        local Root = Character:WaitForChild("HumanoidRootPart", 10)
+        if not Humanoid or not Root then
+            return
+        end
 
-if getgenv().AutoApplySettings then
-applyToTables()
+        task.wait(0.75)
+
+        for Attempt = 1, 8 do
+            if SpeedRespawnEnv.KRYVEX_SpeedRespawnGeneration ~= SpeedRespawnGeneration
+                or LocalPlayer.Character ~= Character then
+                return
+            end
+
+            local ShouldApplySpeed = getgenv().AutoApplySettings == true
+                or SpeedBaselineReapplyPending
+            if not ShouldApplySpeed then
+                return
+            end
+
+            cachedTables = nil
+            local Tables = getMatchingTables()
+            RefreshNativeSpeedCache(Tables)
+
+            if getgenv().AutoApplySettings then
+                applyToTables()
+            end
+
+            local Applied = applySpeedBaseline()
+            if Applied then
+                SpeedBaselineReapplyPending = false
+                return
+            end
+
+            if Attempt < 8 then
+                task.wait(0.75)
+            end
+        end
+    end)
 end
 
-end)
+LocalPlayer.CharacterAdded:Connect(ApplySpeedAfterCharacter)
+
+if LocalPlayer.Character then
+    ApplySpeedAfterCharacter(LocalPlayer.Character)
+end
 
 local AutoJump = false
 local AutoJumpConnection = nil
@@ -7274,6 +7480,7 @@ do
     })
 end
 
+do
 if not game:IsLoaded() then game.Loaded:Wait() end
 
 local CoreGui = game:GetService("CoreGui")
@@ -7289,6 +7496,7 @@ local LUCIDE_NAME = "move"
 local RESET_ICON = "rotate-ccw"
 local FALLBACK_EMOJI = "✋"
 local SLOT = 44
+local TOOL_WIDTH = 62
 local ICON = 36
 local ICON_DRAW = 24
 local FALLBACK_X, FALLBACK_Y = 400, 18
@@ -7315,6 +7523,7 @@ pcall(function()
         "https://raw.githubusercontent.com/deividcomsono/lucide-roblox-direct/refs/heads/main/source.lua"
     ))()
 end)
+
 local function getAsset(name)
     if not Lucide then return nil end
     local ok, a = pcall(Lucide.GetAsset, name)
@@ -7332,39 +7541,66 @@ gui.IgnoreGuiInset = true
 gui.DisplayOrder = 999999
 gui.Parent = parent
 
--- ===== หาตำแหน่ง ต่อท้ายปุ่มขวาสุดของ topbar =====
+-- ===== หาตำแหน่งต่อท้ายปุ่มขวาสุดของ Topbar =====
 local inset = GuiService:GetGuiInset()
 local posX, posY = FALLBACK_X, FALLBACK_Y
+
 pcall(function()
     local top = CoreGui:FindFirstChild("TopBarApp")
     if not top then return end
+
     local right, midY
+
     for _, o in ipairs(top:GetDescendants()) do
         if o:IsA("GuiObject") and o.Visible then
             local s, p = o.AbsoluteSize, o.AbsolutePosition
             local my = p.Y + s.Y / 2
-            if my < 30 then my = my + inset.Y end
-            if s.Y >= 40 and s.Y <= 56 and s.X >= 40 and s.X <= 300 and my > 15 and my < 65 then
+
+            if my < 30 then
+                my = my + inset.Y
+            end
+
+            if s.Y >= 40
+                and s.Y <= 56
+                and s.X >= 40
+                and s.X <= 300
+                and my > 15
+                and my < 65 then
+
                 local r = p.X + s.X
-                if not right or r > right then right, midY = r, my end
+                if not right or r > right then
+                    right, midY = r, my
+                end
             end
         end
     end
+
     if right and right > 100 and right < 700 then
         posX = right + GAP
         posY = midY - SLOT / 2
     end
 end)
 
--- ===== สร้างปุ่มวงกลม (ใช้ซ้ำได้ทั้งปุ่มลาก/ปุ่มรีเซ็ต) =====
-local function makeButton(x, y, lucideName, emoji)
+-- ให้แผงสามปุ่มอยู่ในขอบจอ
+local camera = workspace.CurrentCamera
+local viewSize = camera and camera.ViewportSize or Vector2.new(1920, 1080)
+local panelWidth = SLOT * 2 + GAP * 2 + TOOL_WIDTH
+
+posX = math.clamp(posX, 8, math.max(8, viewSize.X - panelWidth - 8))
+posY = math.clamp(posY, 8, math.max(8, viewSize.Y - SLOT - 8))
+
+-- ===== สร้างปุ่มวงกลม/แคปซูล =====
+local function makeButton(x, y, lucideName, emoji, width)
+    local buttonWidth = width or SLOT
+
     local bar = Instance.new("Frame")
     bar.Position = UDim2.fromOffset(x, y)
-    bar.Size = UDim2.fromOffset(SLOT, SLOT)
+    bar.Size = UDim2.fromOffset(buttonWidth, SLOT)
     bar.BackgroundColor3 = Color3.new(0.07059, 0.07059, 0.08235)
     bar.BackgroundTransparency = 0.08
     bar.BorderSizePixel = 0
     bar.Parent = gui
+
     Instance.new("UICorner", bar).CornerRadius = UDim.new(1, 0)
 
     local hl = Instance.new("Frame")
@@ -7376,10 +7612,12 @@ local function makeButton(x, y, lucideName, emoji)
     hl.BorderSizePixel = 0
     hl.Visible = false
     hl.Parent = bar
+
     Instance.new("UICorner", hl).CornerRadius = UDim.new(1, 0)
 
     local asset = getAsset(lucideName)
     local icon
+
     if asset then
         icon = Instance.new("ImageLabel")
         icon.Image = asset.Url
@@ -7395,6 +7633,7 @@ local function makeButton(x, y, lucideName, emoji)
         icon.TextColor3 = OFF_COLOR
         icon.Size = UDim2.fromOffset(ICON, ICON)
     end
+
     icon.AnchorPoint = Vector2.new(0.5, 0.5)
     icon.Position = UDim2.fromScale(0.5, 0.5)
     icon.BackgroundTransparency = 1
@@ -7403,26 +7642,42 @@ local function makeButton(x, y, lucideName, emoji)
     local hit = Instance.new("ImageButton")
     hit.AnchorPoint = Vector2.new(0.5, 0.5)
     hit.Position = UDim2.fromScale(0.5, 0.5)
-    hit.Size = UDim2.fromOffset(SLOT, SLOT)
+    hit.Size = UDim2.fromOffset(buttonWidth, SLOT)
     hit.BackgroundTransparency = 1
     hit.Image = ""
     hit.AutoButtonColor = false
     hit.ZIndex = 5
     hit.Parent = bar
+
     Instance.new("UICorner", hit).CornerRadius = UDim.new(1, 0)
 
     return bar, hl, icon, hit
 end
 
-local bar, hl, icon, hit = makeButton(posX + OFFSET_X, posY + OFFSET_Y, LUCIDE_NAME, FALLBACK_EMOJI)
-local rbar, rhl, ricon, rhit = makeButton(posX + OFFSET_X + SLOT + GAP, posY + OFFSET_Y, RESET_ICON, "♻")
+local bar, hl, icon, hit =
+    makeButton(posX + OFFSET_X, posY + OFFSET_Y, LUCIDE_NAME, FALLBACK_EMOJI)
+
+local rbar, rhl, ricon, rhit =
+    makeButton(posX + OFFSET_X + SLOT + GAP, posY + OFFSET_Y, RESET_ICON, "♻")
+
+local toolBar, toolHighlight, toolIcon, toolHit = makeButton(
+    posX + OFFSET_X + (SLOT + GAP) * 2,
+    posY + OFFSET_Y,
+    "wrench",
+    "🔧",
+    TOOL_WIDTH
+)
 
 -- ===== ระบบลากปุ่ม =====
 local editMode = false
-local moved = {}   -- [obj] = {parent, size, position, layoutOrder, placeholder}
+local moved = {}
 
 local function setColor(ic, c)
-    if ic:IsA("ImageLabel") then ic.ImageColor3 = c else ic.TextColor3 = c end
+    if ic:IsA("ImageLabel") then
+        ic.ImageColor3 = c
+    else
+        ic.TextColor3 = c
+    end
 end
 
 local function setMode(on)
@@ -7431,7 +7686,10 @@ local function setMode(on)
     hl.BackgroundTransparency = on and 0.75 or 0.92
     setColor(icon, on and ON_COLOR or OFF_COLOR)
 end
-hit.MouseButton1Click:Connect(function() setMode(not editMode) end)
+
+hit.MouseButton1Click:Connect(function()
+    setMode(not editMode)
+end)
 
 -- รีเซ็ตทุกปุ่มกลับที่เดิม
 rhit.MouseButton1Click:Connect(function()
@@ -7442,13 +7700,18 @@ rhit.MouseButton1Click:Connect(function()
                 obj.LayoutOrder = info.layoutOrder
                 info.placeholder:Destroy()
             end
+
             obj.Size = info.size
             obj.Position = info.position
         end
     end
+
     moved = {}
     rhl.Visible = true
-    task.delay(0.2, function() rhl.Visible = false end)
+
+    task.delay(0.2, function()
+        rhl.Visible = false
+    end)
 end)
 
 local function viewport()
@@ -7458,33 +7721,49 @@ end
 
 local function tooBig(obj)
     local v = viewport()
-    return obj.AbsoluteSize.X >= v.X * 0.6 and obj.AbsoluteSize.Y >= v.Y * 0.6
+
+    return obj.AbsoluteSize.X >= v.X * 0.6
+        and obj.AbsoluteSize.Y >= v.Y * 0.6
 end
 
 local function overMine(pos)
-    for _, b in ipairs({bar, rbar}) do
+    for _, b in ipairs({bar, rbar, toolBar}) do
         local p, s = b.AbsolutePosition, b.AbsoluteSize
-        if pos.X >= p.X and pos.X <= p.X + s.X and pos.Y >= p.Y and pos.Y <= p.Y + s.Y then
+
+        if pos.X >= p.X
+            and pos.X <= p.X + s.X
+            and pos.Y >= p.Y
+            and pos.Y <= p.Y + s.Y then
             return true
         end
     end
+
     return false
 end
 
--- หาตัวที่จะลาก: ปุ่มที่นิ้วแตะ (ถ้าไม่มีปุ่ม ใช้ชิ้นบนสุดที่ไม่ใหญ่เกินไป)
+-- หาตัวที่จะลาก
 local function findTarget(pos)
     local list = playerGui:GetGuiObjectsAtPosition(pos.X, pos.Y)
     local fallback
+
     for _, obj in ipairs(list) do
-        if obj:IsA("GuiObject") and obj.Visible and not tooBig(obj) then
+        if obj:IsA("GuiObject")
+            and obj.Visible
+            and not tooBig(obj) then
+
             fallback = fallback or obj
             local cur = obj
+
             while cur and cur:IsA("GuiObject") do
-                if cur:IsA("GuiButton") and not tooBig(cur) then return cur end
+                if cur:IsA("GuiButton") and not tooBig(cur) then
+                    return cur
+                end
+
                 cur = cur.Parent
             end
         end
     end
+
     return fallback
 end
 
@@ -7493,12 +7772,13 @@ local function inLayout(obj)
     return p and p:FindFirstChildWhichIsA("UIGridStyleLayout") ~= nil
 end
 
--- ยกปุ่มออกจาก Layout โดยทิ้งตัวแทนล่องหนไว้ ปุ่มอื่นจะได้ไม่ขยับ
+-- ยกปุ่มออกจาก Layout โดยทิ้งตัวแทนล่องหนไว้
 local function detach(obj)
     local sg = obj:FindFirstAncestorWhichIsA("ScreenGui")
     if not sg then return false end
 
     local abs, size = obj.AbsolutePosition, obj.AbsoluteSize
+
     local ph = Instance.new("Frame")
     ph.Name = "DragPlaceholder"
     ph.BackgroundTransparency = 1
@@ -7508,20 +7788,26 @@ local function detach(obj)
     ph.Parent = obj.Parent
 
     local rec = moved[obj]
+
     if rec then
         rec.placeholder = ph
     else
         moved[obj] = {
-            parent = obj.Parent, size = obj.Size, position = obj.Position,
-            layoutOrder = obj.LayoutOrder, placeholder = ph,
+            parent = obj.Parent,
+            size = obj.Size,
+            position = obj.Position,
+            layoutOrder = obj.LayoutOrder,
+            placeholder = ph,
         }
     end
 
     obj.Size = UDim2.fromOffset(size.X, size.Y)
     obj.Parent = sg
     obj.Position = UDim2.fromOffset(0, 0)
+
     local origin = obj.AbsolutePosition
     obj.Position = UDim2.fromOffset(abs.X - origin.X, abs.Y - origin.Y)
+
     return true
 end
 
@@ -7529,13 +7815,17 @@ local cand, target, dragStart, startPos, activeInput
 
 UIS.InputBegan:Connect(function(input)
     if not editMode or cand then return end
+
     if input.UserInputType ~= Enum.UserInputType.MouseButton1
-    and input.UserInputType ~= Enum.UserInputType.Touch then return end
+        and input.UserInputType ~= Enum.UserInputType.Touch then
+        return
+    end
 
     local pos = Vector2.new(input.Position.X, input.Position.Y)
     if overMine(pos) then return end
 
     local t = findTarget(pos)
+
     if t then
         cand, activeInput, dragStart = t, input, pos
     end
@@ -7543,34 +7833,499 @@ end)
 
 UIS.InputChanged:Connect(function(input)
     if not cand then return end
-    if input ~= activeInput and input.UserInputType ~= Enum.UserInputType.MouseMovement then return end
+
+    if input ~= activeInput
+        and input.UserInputType ~= Enum.UserInputType.MouseMovement then
+        return
+    end
 
     local d = Vector2.new(input.Position.X, input.Position.Y) - dragStart
 
     if not target then
         if d.Magnitude < DRAG_THRESHOLD then return end
+
         -- เริ่มลากจริง
-        if inLayout(cand) and not moved[cand] or (moved[cand] == nil and inLayout(cand)) then
-            if not detach(cand) then cand = nil return end
+        if inLayout(cand)
+            and (not moved[cand] or moved[cand] == nil) then
+
+            if not detach(cand) then
+                cand = nil
+                return
+            end
         elseif not moved[cand] then
-            moved[cand] = {parent = cand.Parent, size = cand.Size, position = cand.Position}
+            moved[cand] = {
+                parent = cand.Parent,
+                size = cand.Size,
+                position = cand.Position,
+            }
         end
+
         target = cand
         startPos = target.Position
     end
 
-    target.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X,
-                                startPos.Y.Scale, startPos.Y.Offset + d.Y)
+    target.Position = UDim2.new(
+        startPos.X.Scale,
+        startPos.X.Offset + d.X,
+        startPos.Y.Scale,
+        startPos.Y.Offset + d.Y
+    )
 end)
 
 UIS.InputEnded:Connect(function(input)
-    if input == activeInput or input.UserInputType == Enum.UserInputType.MouseButton1 then
+    if input == activeInput
+        or input.UserInputType == Enum.UserInputType.MouseButton1 then
         cand, target, activeInput = nil, nil, nil
     end
 end)
 
-print("[DragModeBtn] โหลดแล้ว | Lucide:", Lucide and "ok" or "ไม่ติด (ใช้อีโมจิ)",
-      "| ตำแหน่ง", math.floor(posX), math.floor(posY))
+-- ===== PART BUILDER (ปุ่มประแจ) =====
+do
+    local RunService = game:GetService("RunService")
+    local TweenService = game:GetService("TweenService")
+
+    local PANEL_W = 250
+    local STEP_SIZE = 0.5
+    local STEP_MOVE = 1
+    local C_BG = Color3.fromRGB(18, 18, 21)
+    local C_ROW = Color3.fromRGB(32, 32, 38)
+    local C_TXT = Color3.fromRGB(247, 247, 248)
+    local C_DIM = Color3.fromRGB(150, 150, 160)
+    local C_ACC = ON_COLOR
+    local C_PART = Color3.fromRGB(190, 195, 210)
+
+    local function mk(class, props, parent)
+        local o = Instance.new(class)
+        for k, v in pairs(props) do o[k] = v end
+        o.Parent = parent
+        return o
+    end
+
+    local function round(o, r)
+        mk("UICorner", {CornerRadius = UDim.new(0, r)}, o)
+    end
+
+    local folder = workspace:FindFirstChild("KRYVEX_Parts")
+        or mk("Folder", {Name = "KRYVEX_Parts"}, workspace)
+
+    -- ===== แผงเมนู =====
+    local toolRight = toolBar.Position.X.Offset + TOOL_WIDTH
+    local px = math.clamp(toolRight, PANEL_W + 8, math.max(PANEL_W + 8, viewSize.X - 8))
+    local py = toolBar.Position.Y.Offset + SLOT + GAP
+
+    local panel = mk("Frame", {
+        Name = "PartPanel",
+        Visible = false,
+        Active = true,
+        AnchorPoint = Vector2.new(1, 0),
+        Position = UDim2.fromOffset(px, py),
+        Size = UDim2.fromOffset(PANEL_W, 0),
+        AutomaticSize = Enum.AutomaticSize.Y,
+        BackgroundColor3 = C_BG,
+        BackgroundTransparency = 0.05,
+        BorderSizePixel = 0,
+    }, gui)
+    round(panel, 16)
+
+    local stroke = mk("UIStroke", {
+        Thickness = 1.5,
+        Transparency = 0.35,
+        ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+    }, panel)
+    local strokeGrad = mk("UIGradient", {
+        Color = ColorSequence.new(Color3.fromRGB(235, 235, 245), Color3.fromRGB(40, 40, 48)),
+    }, stroke)
+
+    mk("UIPadding", {
+        PaddingTop = UDim.new(0, 10),
+        PaddingBottom = UDim.new(0, 10),
+        PaddingLeft = UDim.new(0, 10),
+        PaddingRight = UDim.new(0, 10),
+    }, panel)
+    mk("UIListLayout", {
+        Padding = UDim.new(0, 6),
+        SortOrder = Enum.SortOrder.LayoutOrder,
+    }, panel)
+    local scale = mk("UIScale", {Scale = 1}, panel)
+
+    -- ===== หัวเมนู: โมเดล 3D + ข้อความ =====
+    local head = mk("Frame", {
+        BackgroundTransparency = 1,
+        Size = UDim2.new(1, 0, 0, 72),
+        LayoutOrder = 1,
+    }, panel)
+
+    local vp = mk("ViewportFrame", {
+        Size = UDim2.fromOffset(72, 72),
+        BackgroundColor3 = C_ROW,
+        BorderSizePixel = 0,
+        Ambient = Color3.fromRGB(150, 150, 160),
+        LightColor = Color3.new(1, 1, 1),
+        LightDirection = Vector3.new(-1, -1, -1),
+    }, head)
+    round(vp, 12)
+
+    local previewPart = mk("Part", {
+        Size = Vector3.new(1, 1, 1),
+        Color = C_PART,
+        Material = Enum.Material.SmoothPlastic,
+        Anchored = true,
+    }, vp)
+    local vcam = mk("Camera", {
+        CFrame = CFrame.lookAt(Vector3.new(2.2, 1.6, 2.6), Vector3.zero),
+    }, vp)
+    vp.CurrentCamera = vcam
+
+    local spawnHit = mk("TextButton", {
+        Size = UDim2.fromOffset(72, 72),
+        BackgroundTransparency = 1,
+        Text = "",
+        ZIndex = 5,
+    }, head)
+
+    mk("TextLabel", {
+        BackgroundTransparency = 1,
+        Position = UDim2.fromOffset(82, 4),
+        Size = UDim2.new(1, -82, 0, 20),
+        Font = Enum.Font.GothamBold,
+        Text = "PART BUILDER",
+        TextSize = 15,
+        TextColor3 = C_TXT,
+        TextXAlignment = Enum.TextXAlignment.Left,
+    }, head)
+    mk("TextLabel", {
+        BackgroundTransparency = 1,
+        Position = UDim2.fromOffset(82, 26),
+        Size = UDim2.new(1, -82, 0, 40),
+        Font = Enum.Font.Gotham,
+        Text = "แตะรูปเพื่อเสก Part ตรงหน้า • แตะตัวเลขเพื่อพิมพ์ค่าเองได้",
+        TextSize = 12,
+        TextWrapped = true,
+        TextColor3 = C_DIM,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextYAlignment = Enum.TextYAlignment.Top,
+    }, head)
+
+    -- ===== แท็บ ขนาด / ย้าย / เอียง =====
+    local tabs = mk("Frame", {
+        BackgroundTransparency = 1,
+        Size = UDim2.new(1, 0, 0, 30),
+        LayoutOrder = 2,
+    }, panel)
+    mk("UIListLayout", {
+        FillDirection = Enum.FillDirection.Horizontal,
+        Padding = UDim.new(0, 6),
+    }, tabs)
+
+    local function tabBtn(text)
+        local b = mk("TextButton", {
+            Size = UDim2.new(1 / 3, -4, 1, 0),
+            BackgroundColor3 = C_ROW,
+            BorderSizePixel = 0,
+            AutoButtonColor = false,
+            Font = Enum.Font.GothamBold,
+            TextSize = 13,
+            Text = text,
+            TextColor3 = C_DIM,
+        }, tabs)
+        round(b, 10)
+        return b
+    end
+    local tabSize = tabBtn("ขนาด")
+    local tabMove = tabBtn("ย้าย")
+    local tabRot = tabBtn("เอียง")
+
+    -- ===== สถานะ =====
+    local STEP_ROT = 5 -- องศาต่อการกด
+    local mode = "size"
+    local selected
+    local axes = {"X", "Y", "Z"}
+    local valueBoxes = {}
+    local rowLabels = {}
+    local LABELS = {
+        size = {"X", "Y", "Z"},
+        move = {"X", "Y", "Z"},
+        rot = {"เงย", "หมุน", "เอียง"},
+    }
+    local STEP = {size = STEP_SIZE, move = STEP_MOVE, rot = STEP_ROT}
+
+    local selBox = mk("SelectionBox", {
+        LineThickness = 0.04,
+        Color3 = C_ACC,
+        SurfaceColor3 = C_ACC,
+        SurfaceTransparency = 0.85,
+    }, gui)
+
+    local function alive()
+        return selected ~= nil and selected.Parent ~= nil
+    end
+
+    -- มุมเอียงเก็บเป็นองศาไว้ที่ตัว Part (เงย=X, หมุน=Y, เอียงข้าง=Z)
+    local function getRot()
+        return selected:GetAttribute("rot") or Vector3.zero
+    end
+
+    local function getAxis(i)
+        local ax = axes[i]
+        if mode == "size" then
+            return selected.Size[ax]
+        elseif mode == "move" then
+            return selected.Position[ax]
+        end
+        return getRot()[ax]
+    end
+
+    local function setAxis(i, v)
+        if not alive() then return end
+        if v ~= v or math.abs(v) > 1e6 then return end
+
+        if mode == "size" then
+            local s = selected.Size
+            local a = {s.X, s.Y, s.Z}
+            a[i] = math.clamp(v, 0.2, 2048)
+            selected.Size = Vector3.new(a[1], a[2], a[3])
+        elseif mode == "move" then
+            local p = selected.Position
+            local a = {p.X, p.Y, p.Z}
+            a[i] = v
+            selected.CFrame = selected.CFrame.Rotation + Vector3.new(a[1], a[2], a[3])
+        else
+            local r = getRot()
+            local a = {r.X, r.Y, r.Z}
+            a[i] = ((v + 180) % 360) - 180
+            local nr = Vector3.new(a[1], a[2], a[3])
+            selected:SetAttribute("rot", nr)
+            selected.CFrame = CFrame.new(selected.Position)
+                * CFrame.fromEulerAnglesYXZ(math.rad(nr.X), math.rad(nr.Y), math.rad(nr.Z))
+        end
+    end
+
+    local function refresh()
+        for i = 1, 3 do
+            rowLabels[i].Text = LABELS[mode][i]
+            valueBoxes[i].Text = alive() and string.format("%.1f", getAxis(i)) or "0.0"
+        end
+    end
+
+    local function selectPart(p)
+        selected = p
+        selBox.Adornee = p
+        refresh()
+    end
+
+    local function nudge(i, dir)
+        if not alive() then return end
+        setAxis(i, getAxis(i) + dir * STEP[mode])
+        refresh()
+    end
+
+    local function setPartMode(m)
+        mode = m
+        for key, b in pairs({size = tabSize, move = tabMove, rot = tabRot}) do
+            local on = (key == m)
+            b.BackgroundColor3 = on and C_ACC or C_ROW
+            b.TextColor3 = on and C_BG or C_DIM
+        end
+        refresh()
+    end
+    tabSize.MouseButton1Click:Connect(function() setPartMode("size") end)
+    tabMove.MouseButton1Click:Connect(function() setPartMode("move") end)
+    tabRot.MouseButton1Click:Connect(function() setPartMode("rot") end)
+
+    -- กดค้างเพื่อเพิ่ม/ลดต่อเนื่อง
+    local function holdBtn(btn, fn)
+        local held, token = false, 0
+        btn.InputBegan:Connect(function(inp)
+            if inp.UserInputType == Enum.UserInputType.MouseButton1
+                or inp.UserInputType == Enum.UserInputType.Touch then
+                held = true
+                token += 1
+                local my = token
+                fn()
+                task.delay(0.35, function()
+                    while held and token == my do
+                        fn()
+                        task.wait(0.06)
+                    end
+                end)
+            end
+        end)
+        btn.InputEnded:Connect(function(inp)
+            if inp.UserInputType == Enum.UserInputType.MouseButton1
+                or inp.UserInputType == Enum.UserInputType.Touch then
+                held = false
+            end
+        end)
+    end
+
+    -- ===== แถว 3 แกน (ปุ่ม - / ช่องพิมพ์เลข / ปุ่ม +) =====
+    for i = 1, 3 do
+        local row = mk("Frame", {
+            BackgroundColor3 = C_ROW,
+            BorderSizePixel = 0,
+            Size = UDim2.new(1, 0, 0, 30),
+            LayoutOrder = 2 + i,
+        }, panel)
+        round(row, 10)
+
+        rowLabels[i] = mk("TextLabel", {
+            BackgroundTransparency = 1,
+            Position = UDim2.fromOffset(12, 0),
+            Size = UDim2.fromOffset(48, 30),
+            Font = Enum.Font.GothamBold,
+            Text = axes[i],
+            TextSize = 13,
+            TextColor3 = C_ACC,
+            TextXAlignment = Enum.TextXAlignment.Left,
+        }, row)
+
+        local function stepBtn(text, x)
+            local b = mk("TextButton", {
+                AnchorPoint = Vector2.new(0, 0.5),
+                Position = UDim2.new(0, x, 0.5, 0),
+                Size = UDim2.fromOffset(44, 22),
+                BackgroundColor3 = C_BG,
+                BorderSizePixel = 0,
+                AutoButtonColor = false,
+                Font = Enum.Font.GothamBold,
+                Text = text,
+                TextSize = 16,
+                TextColor3 = C_TXT,
+            }, row)
+            round(b, 8)
+            return b
+        end
+
+        local minus = stepBtn("-", 62)
+        local plus = stepBtn("+", 166)
+
+        -- ช่องพิมพ์เลข: แตะแล้วพิมพ์ค่าที่ต้องการ กด Enter/ปิดคีย์บอร์ดเพื่อใช้ค่า
+        local box = mk("TextBox", {
+            AnchorPoint = Vector2.new(0, 0.5),
+            Position = UDim2.new(0, 110, 0.5, 0),
+            Size = UDim2.fromOffset(52, 22),
+            BackgroundColor3 = C_BG,
+            BorderSizePixel = 0,
+            Font = Enum.Font.GothamBold,
+            Text = "0.0",
+            TextSize = 13,
+            TextColor3 = C_TXT,
+            ClearTextOnFocus = true,
+            ClipsDescendants = true,
+        }, row)
+        round(box, 8)
+        valueBoxes[i] = box
+
+        box.FocusLost:Connect(function()
+            local n = tonumber(box.Text)
+            if n then setAxis(i, n) end
+            refresh()
+        end)
+
+        holdBtn(minus, function() nudge(i, -1) end)
+        holdBtn(plus, function() nudge(i, 1) end)
+    end
+
+    -- ===== ปุ่มล่าง: ลบ / ล้างทั้งหมด =====
+    local foot = mk("Frame", {
+        BackgroundTransparency = 1,
+        Size = UDim2.new(1, 0, 0, 30),
+        LayoutOrder = 6,
+    }, panel)
+    mk("UIListLayout", {
+        FillDirection = Enum.FillDirection.Horizontal,
+        Padding = UDim.new(0, 6),
+    }, foot)
+
+    local function footBtn(text)
+        local b = mk("TextButton", {
+            Size = UDim2.new(0.5, -3, 1, 0),
+            BackgroundColor3 = C_ROW,
+            BorderSizePixel = 0,
+            AutoButtonColor = false,
+            Font = Enum.Font.GothamBold,
+            TextSize = 12,
+            Text = text,
+            TextColor3 = Color3.fromRGB(255, 120, 120),
+        }, foot)
+        round(b, 10)
+        return b
+    end
+    local delBtn = footBtn("ลบอันที่เลือก")
+    local clearBtn = footBtn("ล้างทั้งหมด")
+
+    delBtn.MouseButton1Click:Connect(function()
+        if alive() then selected:Destroy() end
+        local kids = folder:GetChildren()
+        selectPart(kids[#kids])
+    end)
+    clearBtn.MouseButton1Click:Connect(function()
+        folder:ClearAllChildren()
+        selectPart(nil)
+    end)
+
+    -- ===== เสก Part ตรงหน้าตัวละคร =====
+    spawnHit.MouseButton1Click:Connect(function()
+        local char = plr.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+
+        local p = Instance.new("Part")
+        p.Name = "KRYVEX_Part"
+        p.Size = Vector3.new(2, 2, 2)
+        p.Color = C_PART
+        p.Material = Enum.Material.SmoothPlastic
+        p.Anchored = true
+        p.Position = hrp.Position + hrp.CFrame.LookVector * 5
+        p.Parent = folder
+        selectPart(p)
+    end)
+
+    -- ===== เปิด/ปิดเมนูด้วยปุ่มประแจ =====
+    local previewConn
+    local function setPanel(on)
+        panel.Visible = on
+        toolHighlight.Visible = on
+        toolHighlight.BackgroundTransparency = on and 0.75 or 0.92
+        setColor(toolIcon, on and ON_COLOR or OFF_COLOR)
+
+        if previewConn then
+            previewConn:Disconnect()
+            previewConn = nil
+        end
+
+        if on then
+            scale.Scale = 0.85
+            TweenService:Create(
+                scale,
+                TweenInfo.new(0.18, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+                {Scale = 1}
+            ):Play()
+
+            local t0 = os.clock()
+            previewConn = RunService.RenderStepped:Connect(function()
+                local t = os.clock() - t0
+                previewPart.CFrame = CFrame.Angles(t * 0.9, t * 1.3, 0)
+                strokeGrad.Rotation = (t * 60) % 360
+            end)
+        end
+    end
+
+    toolHit.MouseButton1Click:Connect(function()
+        setPanel(not panel.Visible)
+    end)
+
+    setPartMode("size")
+end
+
+print(
+    "[DragModeBtn] โหลดแล้ว | Lucide:",
+    Lucide and "ok" or "ไม่ติด (ใช้อีโมจิ)",
+    "| ตำแหน่ง",
+    math.floor(posX),
+    math.floor(posY)
+)
+end
 
 --=========================================================
 -- ระบบเปลี่ยนธีมท้องฟ้า
@@ -10056,6 +10811,7 @@ do
     local RespawnMode = "สปาวปกติ"
     local RespawnDelay = 3
     local SavedRespawnCFrame = nil
+    local PendingExternalRestoreCFrame = nil
 
     local RespawnToken = 0
     local ProcessedCharacters = setmetatable({}, { __mode = "k" })
@@ -10112,15 +10868,23 @@ do
     end
 
     local function RestoreSavedPosition(Character)
-        if not AutoRespawnEnabled
-            or RespawnMode ~= "สปาวจุดเดิม"
-            or not SavedRespawnCFrame then
+        local ExternalTargetCFrame = PendingExternalRestoreCFrame
+        local IsExternalRestore = ExternalTargetCFrame ~= nil
+
+        if not IsExternalRestore
+            and (not AutoRespawnEnabled
+                or RespawnMode ~= "สปาวจุดเดิม"
+                or not SavedRespawnCFrame) then
             return
+        end
+
+        local TargetCFrame = ExternalTargetCFrame or SavedRespawnCFrame
+        if IsExternalRestore then
+            PendingExternalRestoreCFrame = nil
         end
 
         RespawnToken += 1
         local MyToken = RespawnToken
-        local TargetCFrame = SavedRespawnCFrame
 
         task.spawn(function()
             local Humanoid = Character:WaitForChild("Humanoid", 10)
@@ -10130,13 +10894,20 @@ do
                 return
             end
 
-            local Deadline = os.clock() + 10
+            local function IsCancelled()
+                if MyToken ~= RespawnToken or Character ~= Player.Character then
+                    return true
+                end
+                if not IsExternalRestore
+                    and (not AutoRespawnEnabled or RespawnMode ~= "สปาวจุดเดิม") then
+                    return true
+                end
+                return false
+            end
 
+            local Deadline = os.clock() + 10
             while os.clock() < Deadline do
-                if MyToken ~= RespawnToken
-                    or not AutoRespawnEnabled
-                    or RespawnMode ~= "สปาวจุดเดิม"
-                    or Character ~= Player.Character then
+                if IsCancelled() then
                     return
                 end
 
@@ -10147,20 +10918,14 @@ do
                 task.wait(0.1)
             end
 
-            if MyToken ~= RespawnToken
-                or not AutoRespawnEnabled
-                or RespawnMode ~= "สปาวจุดเดิม"
-                or Character ~= Player.Character
+            if IsCancelled()
                 or Humanoid.Health <= 0
                 or IsMenuVisible() then
                 return
             end
 
             for _ = 1, 10 do
-                if MyToken ~= RespawnToken
-                    or not AutoRespawnEnabled
-                    or Character ~= Player.Character
-                    or Humanoid.Health <= 0 then
+                if IsCancelled() or Humanoid.Health <= 0 then
                     break
                 end
 
@@ -10173,6 +10938,27 @@ do
             end
         end)
     end
+
+    local function SendSpeedModeWithReturnPosition()
+        local Character = Player.Character
+        local Root = Character and Character:FindFirstChild("HumanoidRootPart")
+        if not Root then
+            return false, "ไม่พบ HumanoidRootPart สำหรับบันทึกจุดเดิม"
+        end
+
+        SavedRespawnCFrame = Root.CFrame
+        PendingExternalRestoreCFrame = SavedRespawnCFrame
+
+        local Success, ErrorMessage = SendRespawnRequest()
+        if not Success then
+            PendingExternalRestoreCFrame = nil
+            return false, ErrorMessage
+        end
+
+        return true
+    end
+
+    getgenv().KRYVEX_SendSpeedModeWithReturnPosition = SendSpeedModeWithReturnPosition
 
     local function HandleDeath(Character, Humanoid)
         if not AutoRespawnEnabled
@@ -10324,4 +11110,474 @@ do
             end
         end,
     })
+end
+
+do
+    local WallSlideEnv = getgenv()
+
+    if type(WallSlideEnv.KRYVEX_WallSlideCleanup) == "function" then
+        pcall(WallSlideEnv.KRYVEX_WallSlideCleanup)
+    end
+
+    if _G.__WallSlideConn then
+        pcall(function()
+            _G.__WallSlideConn:Disconnect()
+        end)
+        _G.__WallSlideConn = nil
+    end
+
+    pcall(function()
+        local guiRoot = (gethui and gethui()) or game:GetService("CoreGui")
+        local oldWallGui = guiRoot:FindFirstChild("WallSlideGui")
+        if oldWallGui then
+            oldWallGui:Destroy()
+        end
+    end)
+
+    local ATTACH_DIST = 2.8
+    local HOLD_DIST = 1.6
+    local MAX_SLOPE = 0.3
+    local SPEED_MULT = 1
+    local JUMP_OFF = 40
+    local RECOVER_T = 0.35
+
+    local Enabled = false
+    local Stuck = false
+    local WallNormal = Vector3.new(0, 0, 1)
+    local LastTangent = Vector3.new(1, 0, 0)
+
+    local Character
+    local Humanoid
+    local RootPart
+
+    local RecoverConnection
+    local HeartbeatConnection
+    local JumpConnection
+    local CharacterAddedConnection
+    local Alive = true
+    local CharacterGeneration = 0
+
+    local RayParams = RaycastParams.new()
+    RayParams.FilterType = Enum.RaycastFilterType.Exclude
+    RayParams.IgnoreWater = true
+
+    local function DisconnectRecover()
+        if RecoverConnection then
+            pcall(function()
+                RecoverConnection:Disconnect()
+            end)
+            RecoverConnection = nil
+        end
+    end
+
+    local function CameraFlat()
+        local camera = workspace.CurrentCamera
+        local look = camera and camera.CFrame.LookVector
+
+        if look then
+            local flat = Vector3.new(look.X, 0, look.Z)
+            if flat.Magnitude > 0.01 then
+                return flat.Unit
+            end
+        end
+
+        if RootPart then
+            local look = RootPart.CFrame.LookVector
+            local flat = Vector3.new(look.X, 0, look.Z)
+
+            if flat.Magnitude > 0.01 then
+                return flat.Unit
+            end
+        end
+
+        return Vector3.new(0, 0, -1)
+    end
+
+    local function IsFirstPerson()
+        if LocalPlayer.CameraMode == Enum.CameraMode.LockFirstPerson then
+            return true
+        end
+
+        local camera = workspace.CurrentCamera
+        local head = Character and Character:FindFirstChild("Head")
+
+        if camera and head then
+            return (camera.CFrame.Position - head.Position).Magnitude < 4
+        end
+
+        return false
+    end
+
+    local function FixCamera()
+        local camera = workspace.CurrentCamera
+
+        if Humanoid and camera and camera.CameraSubject ~= Humanoid then
+            camera.CameraSubject = Humanoid
+        end
+    end
+
+    local function SetUpright()
+        if not RootPart or not RootPart.Parent then
+            return
+        end
+
+        RootPart.CFrame = CFrame.lookAt(
+            RootPart.Position,
+            RootPart.Position + CameraFlat()
+        )
+        RootPart.AssemblyAngularVelocity = Vector3.zero
+    end
+
+    local function Detach(push, recover)
+        if not Stuck then
+            return
+        end
+
+        Stuck = false
+
+        local root = RootPart
+        local humanoid = Humanoid
+
+        if humanoid and humanoid.Parent then
+            humanoid.PlatformStand = false
+            humanoid.Sit = false
+        end
+
+        if root and root.Parent then
+            SetUpright()
+
+            if humanoid then
+                pcall(function()
+                    humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+                end)
+            end
+
+            root.AssemblyLinearVelocity = push
+                and (WallNormal * JUMP_OFF + Vector3.new(0, 25, 0))
+                or (WallNormal * 8)
+        end
+
+        FixCamera()
+        DisconnectRecover()
+
+        if recover == false then
+            return
+        end
+
+        local startedAt = os.clock()
+
+        RecoverConnection = RunService.Heartbeat:Connect(function()
+            if Stuck
+                or not root
+                or not root.Parent
+                or os.clock() - startedAt > RECOVER_T then
+
+                DisconnectRecover()
+                return
+            end
+
+            root.AssemblyAngularVelocity = Vector3.zero
+
+            local position = root.Position
+            root.CFrame = CFrame.lookAt(
+                position,
+                position + CameraFlat()
+            )
+
+            FixCamera()
+        end)
+    end
+
+    local function IsWall(result)
+        return result and math.abs(result.Normal.Y) < MAX_SLOPE
+    end
+
+    local function FlatUnit(vector)
+        local flat = Vector3.new(vector.X, 0, vector.Z)
+        return flat.Magnitude > 0.01 and flat.Unit or nil
+    end
+
+    local function Step(deltaTime)
+        if not Alive
+            or not Enabled
+            or not (Character and Humanoid and RootPart)
+            or not Humanoid.Parent
+            or Humanoid.Health <= 0 then
+            return
+        end
+
+        RayParams.FilterDescendantsInstances = { Character }
+
+        local moveDirection = Humanoid.MoveDirection
+        local flatMove = Vector3.new(
+            moveDirection.X,
+            0,
+            moveDirection.Z
+        )
+
+        if not Stuck then
+            if flatMove.Magnitude < 0.1 then
+                return
+            end
+
+            local result = workspace:Raycast(
+                RootPart.Position,
+                flatMove.Unit * ATTACH_DIST,
+                RayParams
+            )
+
+            if IsWall(result) then
+                local normal = FlatUnit(result.Normal)
+
+                if normal then
+                    DisconnectRecover()
+                    Stuck = true
+                    WallNormal = normal
+                    Humanoid.PlatformStand = true
+                end
+            end
+
+            return
+        end
+
+        if flatMove.Magnitude > 0.1
+            and flatMove.Unit:Dot(WallNormal) > 0.5 then
+            Detach(false)
+            return
+        end
+
+        local position = RootPart.Position
+        local result = workspace:Raycast(
+            position,
+            -WallNormal * (HOLD_DIST + 2),
+            RayParams
+        )
+
+        if not IsWall(result) then
+            local probe = workspace:Raycast(
+                position + LastTangent * 3 - WallNormal * 3,
+                -LastTangent * 6,
+                RayParams
+            )
+
+            if IsWall(probe) then
+                result = probe
+            else
+                Detach(false)
+                return
+            end
+        end
+
+        WallNormal = FlatUnit(result.Normal) or WallNormal
+
+        local tangent = flatMove - WallNormal * flatMove:Dot(WallNormal)
+        local slideVelocity = Vector3.zero
+
+        if tangent.Magnitude > 0.05 then
+            local tangentUnit = tangent.Unit
+            LastTangent = tangentUnit
+
+            local ahead = workspace:Raycast(
+                position,
+                tangentUnit * (HOLD_DIST + 1.2),
+                RayParams
+            )
+
+            if IsWall(ahead) and FlatUnit(ahead.Normal) then
+                WallNormal = FlatUnit(ahead.Normal)
+                result = ahead
+
+                tangent = flatMove - WallNormal * flatMove:Dot(WallNormal)
+                tangentUnit = tangent.Magnitude > 0.05
+                    and tangent.Unit
+                    or tangentUnit
+
+                LastTangent = tangentUnit
+            end
+
+            slideVelocity = tangentUnit
+                * Humanoid.WalkSpeed
+                * SPEED_MULT
+                * math.min(tangent.Magnitude * 3, 1)
+        end
+
+        local distance = (position - result.Position):Dot(WallNormal)
+        local pull = math.clamp((HOLD_DIST - distance) * 12, -25, 25)
+
+        RootPart.AssemblyLinearVelocity = Vector3.new(
+            slideVelocity.X + WallNormal.X * pull,
+            0,
+            slideVelocity.Z + WallNormal.Z * pull
+        )
+        RootPart.AssemblyAngularVelocity = Vector3.zero
+
+        if IsFirstPerson() then
+            RootPart.CFrame = CFrame.lookAt(
+                RootPart.Position,
+                RootPart.Position + CameraFlat()
+            )
+        elseif slideVelocity.Magnitude > 1 then
+            local target = CFrame.lookAt(
+                RootPart.Position,
+                RootPart.Position + slideVelocity.Unit
+            )
+
+            RootPart.CFrame = RootPart.CFrame:Lerp(
+                target,
+                math.clamp(deltaTime * 12, 0, 1)
+            )
+        else
+            local lookFlat = FlatUnit(RootPart.CFrame.LookVector) or CameraFlat()
+
+            RootPart.CFrame = CFrame.lookAt(
+                RootPart.Position,
+                RootPart.Position + lookFlat
+            )
+        end
+    end
+
+    local function OnCharacterAdded(newCharacter)
+        CharacterGeneration += 1
+        local generation = CharacterGeneration
+
+        if LocalPlayer.Character ~= newCharacter then
+            return
+        end
+
+        if Stuck then
+            Detach(false, false)
+        end
+
+        DisconnectRecover()
+        Stuck = false
+        Character = nil
+        Humanoid = nil
+        RootPart = nil
+
+        local newHumanoid = newCharacter:WaitForChild("Humanoid", 10)
+        local newRootPart = newCharacter:WaitForChild("HumanoidRootPart", 10)
+
+        if not Alive
+            or generation ~= CharacterGeneration
+            or LocalPlayer.Character ~= newCharacter
+            or not newHumanoid
+            or not newRootPart then
+            return
+        end
+
+        Character = newCharacter
+        Humanoid = newHumanoid
+        RootPart = newRootPart
+    end
+
+    local function SetEnabled(value)
+        if not Alive then
+            return
+        end
+
+        local newValue = value and true or false
+        if Enabled == newValue then
+            return
+        end
+
+        Enabled = newValue
+
+        if Enabled then
+            if not Character or not Humanoid or not RootPart then
+                local currentCharacter = LocalPlayer.Character
+                if currentCharacter then
+                    OnCharacterAdded(currentCharacter)
+                end
+            end
+
+            if not HeartbeatConnection then
+                HeartbeatConnection = RunService.Heartbeat:Connect(Step)
+            end
+
+            if not JumpConnection then
+                JumpConnection = UserInputService.JumpRequest:Connect(function()
+                    if Enabled and Stuck then
+                        Detach(true)
+                    end
+                end)
+            end
+        else
+            if HeartbeatConnection then
+                HeartbeatConnection:Disconnect()
+                HeartbeatConnection = nil
+            end
+
+            if JumpConnection then
+                JumpConnection:Disconnect()
+                JumpConnection = nil
+            end
+
+            if Stuck then
+                Detach(false, false)
+            elseif Humanoid and Humanoid.Parent then
+                Humanoid.PlatformStand = false
+            end
+
+            DisconnectRecover()
+        end
+    end
+
+    CharacterAddedConnection = LocalPlayer.CharacterAdded:Connect(OnCharacterAdded)
+
+    if LocalPlayer.Character then
+        task.spawn(OnCharacterAdded, LocalPlayer.Character)
+    end
+
+    MainTab:CreateToggle({
+        Name = "สไลด์บนกำแพง",
+        Default = false,
+        Callback = SetEnabled,
+    })
+
+    local function CleanupWallSlide()
+        if not Alive then
+            return
+        end
+
+        Alive = false
+        Enabled = false
+
+        if Stuck then
+            Detach(false, false)
+        end
+
+        if Humanoid and Humanoid.Parent then
+            Humanoid.PlatformStand = false
+        end
+
+        DisconnectRecover()
+
+        if HeartbeatConnection then
+            pcall(function()
+                HeartbeatConnection:Disconnect()
+            end)
+        end
+
+        if JumpConnection then
+            pcall(function()
+                JumpConnection:Disconnect()
+            end)
+        end
+
+        if CharacterAddedConnection then
+            pcall(function()
+                CharacterAddedConnection:Disconnect()
+            end)
+        end
+
+        HeartbeatConnection = nil
+        JumpConnection = nil
+        CharacterAddedConnection = nil
+
+        if WallSlideEnv.KRYVEX_WallSlideCleanup == CleanupWallSlide then
+            WallSlideEnv.KRYVEX_WallSlideCleanup = nil
+        end
+    end
+
+    WallSlideEnv.KRYVEX_WallSlideCleanup = CleanupWallSlide
 end
