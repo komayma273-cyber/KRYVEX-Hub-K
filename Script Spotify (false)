@@ -24,17 +24,17 @@ local SongList = {
     { name = "ปาตี้ซิ่งๆ", id = 132114031341541, length = 180, status = true, category = "เพลงแดนซ์" },
     { name = "เพลงไวๆ", id = 111835636697812, length = 180, status = true, category = "เพลงแดนซ์" },
 
-    -- หมวด: เพลงฝรั่ง
-    { name = "Fah", id = 100342787663425, length = 180, status = true, category = "เพลงฝรั่ง" },
-    { name = "ท้าย 2025", id = 123830674951213, length = 180, category = "เพลงฝรั่ง" },
-    { name = "ในวัน (Azov)", id = 88479490836382, length = 180, category = "เพลงฝรั่ง" },
-    { name = "choose (Azov)", id = 81455612889004, length = 180, category = "เพลงฝรั่ง" },
-    { name = "WXH x โอชาร์ Thai 46", id = 119384998246057, length = 180, category = "เพลงฝรั่ง" },
-    { name = "DJ_Guitar", id = 89325251642828, length = 180, category = "เพลงฝรั่ง" },
-    { name = "ซิ่ง", id = 1842418598, length = 180, category = "เพลงฝรั่ง" },
-    { name = "ตี้ดๆ", id = 85624994877786, length = 180, category = "เพลงฝรั่ง" },
-    { name = "หอมบูลูเบอร์", id = 107179735782116, length = 180, category = "เพลงฝรั่ง" },
-    { name = "บูส", id = 118088761921960, length = 180, category = "เพลงฝรั่ง" },
+    -- เพลงเก่าจากหมวดฝรั่ง ย้ายมาอยู่ในหมวดเพลงแดนซ์
+    { name = "Fah", id = 100342787663425, length = 180, status = true, category = "เพลงแดนซ์" },
+    { name = "ท้าย 2025", id = 123830674951213, length = 180, category = "เพลงแดนซ์" },
+    { name = "ในวัน (Azov)", id = 88479490836382, length = 180, category = "เพลงแดนซ์" },
+    { name = "choose (Azov)", id = 81455612889004, length = 180, category = "เพลงแดนซ์" },
+    { name = "WXH x โอชาร์ Thai 46", id = 119384998246057, length = 180, category = "เพลงแดนซ์" },
+    { name = "DJ_Guitar", id = 89325251642828, length = 180, category = "เพลงแดนซ์" },
+    { name = "ซิ่ง", id = 1842418598, length = 180, category = "เพลงแดนซ์" },
+    { name = "ตี้ดๆ", id = 85624994877786, length = 180, category = "เพลงแดนซ์" },
+    { name = "หอมบูลูเบอร์", id = 107179735782116, length = 180, category = "เพลงแดนซ์" },
+    { name = "บูส", id = 118088761921960, length = 180, category = "เพลงแดนซ์" },
 
     -- หมวด: คำด่า+ปั่นๆ
     { name = "หลอกควาย", id = 120729348174022, length = 180, category = "คำด่า+ปั่นๆ" },
@@ -85,7 +85,7 @@ local COLORS = {
 
 --========= BUILD TRACKS & CATEGORIES =========--
 local Tracks = {}
-local Categories = { "เพลงแดนซ์", "เพลงฝรั่ง", "คำด่า+ปั่นๆ" }
+local Categories = { "เพลงแดนซ์", "คำด่า+ปั่นๆ" }
 
 local function rebuildTracks()
     Tracks = {}
