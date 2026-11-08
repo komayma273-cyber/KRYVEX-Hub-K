@@ -1,0 +1,1051 @@
+--// Spotify Player: UI ลอย + แผงเลือกเพลง + ตรวจสอบ Sound ID + เพิ่มเพลงในเกม
+--// FIX: เปลี่ยนหมวดหมู่แล้วเพลงเปลี่ยนตาม + เพลงอังกฤษอยู่หมวดฝรั่ง
+
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local ContentProvider = game:GetService("ContentProvider")
+
+--========= CONFIG =========--
+local SongList = {
+    -- หมวด: เพลงแดนซ์
+    { name = "กลับๆ", id = 71746449065680, length = 180, status = true, category = "เพลงแดนซ์" },
+    { name = "ป้าจิ๊ก / แดนซ์1 / ไทยๆ", id = 119037495327681, length = 180, status = true, category = "เพลงแดนซ์" },
+    { name = "แดนซ์2 / วันไลฟ์", id = 78424397783913, length = 180, status = true, category = "เพลงแดนซ์" },
+    { name = "อาหมวยซิ่ง", id = 94466059598423, length = 180, status = true, category = "เพลงแดนซ์" },
+    { name = "ซาวพม่า", id = 140170664216428, length = 180, status = true, category = "เพลงแดนซ์" },
+    { name = "ตี้ลาว", id = 92959928042658, length = 180, status = true, category = "เพลงแดนซ์" },
+    { name = "ซิ่งๆ 2", id = 99905891709896, length = 180, status = true, category = "เพลงแดนซ์" },
+    { name = "กาบกาบ", id = 117980812942988, length = 180, status = true, category = "เพลงแดนซ์" },
+    { name = "หมก", id = 115795458073016, length = 180, status = true, category = "เพลงแดนซ์" },
+    { name = "น้ำ 1", id = 119522266662300, length = 180, status = true, category = "เพลงแดนซ์" },
+    { name = "น้ำ 2", id = 93457817476067, length = 180, status = true, category = "เพลงแดนซ์" },
+    { name = "ปาตี้ซิ่งๆ", id = 132114031341541, length = 180, status = true, category = "เพลงแดนซ์" },
+    { name = "เพลงไวๆ", id = 111835636697812, length = 180, status = true, category = "เพลงแดนซ์" },
+
+    -- หมวด: เพลงฝรั่ง
+    { name = "Fah", id = 100342787663425, length = 180, status = true, category = "เพลงฝรั่ง" },
+    { name = "ท้าย 2025", id = 123830674951213, length = 180, category = "เพลงฝรั่ง" },
+    { name = "ในวัน (Azov)", id = 88479490836382, length = 180, category = "เพลงฝรั่ง" },
+    { name = "choose (Azov)", id = 81455612889004, length = 180, category = "เพลงฝรั่ง" },
+    { name = "WXH x โอชาร์ Thai 46", id = 119384998246057, length = 180, category = "เพลงฝรั่ง" },
+    { name = "DJ_Guitar", id = 89325251642828, length = 180, category = "เพลงฝรั่ง" },
+    { name = "ซิ่ง", id = 1842418598, length = 180, category = "เพลงฝรั่ง" },
+    { name = "ตี้ดๆ", id = 85624994877786, length = 180, category = "เพลงฝรั่ง" },
+    { name = "หอมบูลูเบอร์", id = 107179735782116, length = 180, category = "เพลงฝรั่ง" },
+    { name = "บูส", id = 118088761921960, length = 180, category = "เพลงฝรั่ง" },
+
+    -- หมวด: คำด่า+ปั่นๆ
+    { name = "หลอกควาย", id = 120729348174022, length = 180, category = "คำด่า+ปั่นๆ" },
+    { name = "อีหมั้น", id = 73796475446356, length = 180, category = "คำด่า+ปั่นๆ" },
+    { name = "เหมือนมึงเฟี้ยว", id = 2875685811, length = 180, category = "คำด่า+ปั่นๆ" },
+    { name = "มาลี", id = 7957099027, length = 180, category = "คำด่า+ปั่นๆ" },
+    { name = "กรีด", id = 86757541012782, length = 180, category = "คำด่า+ปั่นๆ" },
+    { name = "รอบตัด", id = 101152273505006, length = 180, category = "คำด่า+ปั่นๆ" },
+    { name = "สะใจจั๊กๆ", id = 4857572997, length = 180, category = "คำด่า+ปั่นๆ" },
+    { name = "ตำน้าวๆ", id = 8072155067, length = 180, category = "คำด่า+ปั่นๆ" },
+    { name = "ลาบมาก", id = 128320250052591, length = 180, category = "คำด่า+ปั่นๆ" },
+    { name = "ฮี", id = 7259143264, length = 180, category = "คำด่า+ปั่นๆ" },
+    { name = "ไก่", id = 7311938606, length = 180, category = "คำด่า+ปั่นๆ" },
+    { name = "ทุกคนคือลูกกู - P9D", id = 114417841427354, length = 180, category = "คำด่า+ปั่นๆ" },
+    { name = "ข่า", id = 130296691160330, length = 180, category = "คำด่า+ปั่นๆ" },
+    { name = "ขอโทษครับพี่XD", id = 118443319145752, length = 180, category = "คำด่า+ปั่นๆ" },
+    { name = "ขอลายเซ็นต์หน่อยครับ", id = 96323221578716, length = 180, category = "คำด่า+ปั่นๆ" },
+    { name = "เขมรหนี", id = 132208892141622, length = 180, category = "คำด่า+ปั่นๆ" },
+    { name = "ประชาสัมพันธ์", id = 8511588544, length = 180, category = "คำด่า+ปั่นๆ" },
+    { name = "7-11", id = 133696608957144, length = 180, category = "คำด่า+ปั่นๆ" },
+}
+
+local StartPosition = UDim2.new(0.5, 0, 0.8, 0)
+local ToggleStart = UDim2.new(1, -66, 0.5, 0)
+local PlayerKey = Enum.KeyCode.RightShift
+local DrawerKey = Enum.KeyCode.RightControl
+local ToggleAssetId = "109223028350419"
+local DW = 320
+
+--========= THEME =========--
+local GREEN = Color3.fromRGB(29, 185, 84)
+local GREEN_LIGHT = Color3.fromRGB(120, 255, 170)
+local GREEN_DARK = Color3.fromRGB(10, 90, 40)
+local RED = Color3.fromRGB(220, 60, 60)
+local STATUS_YELLOW = Color3.fromRGB(245, 190, 45)
+local BG = Color3.fromRGB(18, 18, 18)
+local GRAY = Color3.fromRGB(179, 179, 179)
+local DIM = Color3.fromRGB(105, 105, 105)
+local WHITE = Color3.fromRGB(255, 255, 255)
+local BLACK = Color3.fromRGB(0, 0, 0)
+local FIELD = Color3.fromRGB(40, 40, 40)
+
+local COLORS = {
+    Color3.fromRGB(30, 30, 30), Color3.fromRGB(200, 40, 60), Color3.fromRGB(60, 90, 220),
+    Color3.fromRGB(150, 60, 200), Color3.fromRGB(230, 130, 30), Color3.fromRGB(70, 130, 140),
+    Color3.fromRGB(150, 190, 30),
+}
+
+--========= BUILD TRACKS & CATEGORIES =========--
+local Tracks = {}
+local Categories = { "เพลงแดนซ์", "เพลงฝรั่ง", "คำด่า+ปั่นๆ" }
+
+local function rebuildTracks()
+    Tracks = {}
+    for i, s in ipairs(SongList) do
+        Tracks[i] = {
+            title = s.name,
+            artist = s.category or "อื่นๆ",
+            length = s.length or 180,
+            sound = s.id,
+            category = s.category or "อื่นๆ",
+            color = COLORS[((i - 1) % #COLORS) + 1],
+            status = s.status,
+        }
+    end
+end
+rebuildTracks()
+
+--========= LUCIDE =========--
+local Lucide
+pcall(function()
+    Lucide = loadstring(game:HttpGet("https://raw.githubusercontent.com/deividcomsono/lucide-roblox-direct/refs/heads/main/source.lua"))()
+end)
+
+local function setIcon(img, name)
+    if not Lucide then return false end
+    local ok, a = pcall(function() return Lucide.GetAsset(name, 48) end)
+    if ok and a then
+        img.Image = a.Url
+        img.ImageRectSize = a.ImageRectSize
+        img.ImageRectOffset = a.ImageRectOffset
+        return true
+    end
+    return false
+end
+
+--========= PARENT =========--
+local function getParent()
+    local ok, ui = pcall(function() return gethui and gethui() end)
+    if ok and ui then return ui end
+    ok, ui = pcall(function() return game:GetService("CoreGui") end)
+    if ok and ui then return ui end
+    return Players.LocalPlayer:WaitForChild("PlayerGui")
+end
+
+local old = getParent():FindFirstChild("SpotifyFloatUI")
+if old then old:Destroy() end
+
+local Gui = Instance.new("ScreenGui")
+Gui.Name = "SpotifyFloatUI"
+Gui.ResetOnSpawn = false
+Gui.IgnoreGuiInset = true
+Gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+Gui.Parent = getParent()
+
+--========= HELPERS =========--
+local function new(class, props, parent)
+    local o = Instance.new(class)
+    for k, v in pairs(props) do o[k] = v end
+    o.Parent = parent
+    return o
+end
+local function corner(o, r) return new("UICorner", { CornerRadius = UDim.new(0, r) }, o) end
+local function fmt(s)
+    s = math.max(0, math.floor(s))
+    return string.format("%d:%02d", math.floor(s / 60), s % 60)
+end
+local function tween(o, t, props, style, dir)
+    local tw = TweenService:Create(o, TweenInfo.new(t, style or Enum.EasingStyle.Quad, dir or Enum.EasingDirection.Out), props)
+    tw:Play()
+    return tw
+end
+local function label(parent, props)
+    props.BackgroundTransparency = 1
+    props.Font = props.Font or Enum.Font.Gotham
+    props.TextXAlignment = props.TextXAlignment or Enum.TextXAlignment.Left
+    props.ZIndex = props.ZIndex or 2
+    return new("TextLabel", props, parent)
+end
+local function iconButton(parent, iconName, pos, btnSize, iconSize, color, anchor, z)
+    z = z or 3
+    local b = new("TextButton", {
+        AnchorPoint = anchor or Vector2.new(0, 0), Position = pos,
+        Size = UDim2.fromOffset(btnSize, btnSize), BackgroundTransparency = 1,
+        Text = "", AutoButtonColor = false, ZIndex = z,
+    }, parent)
+    local img = new("ImageLabel", {
+        AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
+        Size = UDim2.fromOffset(iconSize, iconSize), BackgroundTransparency = 1,
+        ImageColor3 = color, ZIndex = z + 1,
+    }, b)
+    setIcon(img, iconName)
+    return b, img
+end
+local function loadDecalInto(imageLabel, fallback, assetId)
+    task.spawn(function()
+        local texture
+        pcall(function()
+            local obj = game:GetObjects("rbxassetid://" .. assetId)[1]
+            if obj then
+                local d = (obj:IsA("Decal") or obj:IsA("Texture")) and obj or obj:FindFirstChildWhichIsA("Decal", true)
+                if d then texture = d.Texture end
+            end
+        end)
+        imageLabel.Image = texture or ("rbxassetid://" .. assetId)
+        pcall(function() ContentProvider:PreloadAsync({ imageLabel }) end)
+        task.wait(0.3)
+        if imageLabel.IsLoaded and fallback then fallback.Visible = false end
+    end)
+end
+
+--========= STATE =========--
+local index = 1
+local position = 0
+local playing = false
+local shuffleOn = false
+local repeatMode = 0
+local scrubbing = false
+local liked = {}
+local activeCategory = "เพลงแดนซ์" -- หมวดเริ่มต้น
+local onlyLiked = false
+local playerOpened = false
+local drawerOpened = false
+local Rows = {}
+local currentVisibleTrackIndices = {} -- 🔴 เก็บ index เพลงที่มองเห็นในหมวดปัจจุบัน
+
+local Sound = Instance.new("Sound")
+Sound.Name = "SpotifySound"
+Sound.Parent = Gui
+Sound.Volume = 0.5
+
+local loadTrack, setPlaying, setPlayerOpen, toggleLike, seek
+local applyFilter -- forward declaration: ให้ปุ่มหมวดเรียกฟังก์ชันตัวเดียวกับด้านล่าง
+
+--========= ID CHECKER =========--
+local function checkSoundId(id)
+    if not id or id == "" then return false end
+    local testSound = Instance.new("Sound")
+    testSound.SoundId = "rbxassetid://" .. tostring(id)
+    testSound.Parent = Gui
+
+    local loaded = false
+    local conn = testSound.Loaded:Connect(function() loaded = true end)
+
+    local startTime = tick()
+    while not loaded and tick() - startTime < 3 do
+        if testSound.IsLoaded then loaded = true break end
+        RunService.Heartbeat:Wait()
+    end
+
+    conn:Disconnect()
+    testSound:Destroy()
+    return loaded
+end
+
+--========= DRAWER =========--
+local Drawer = new("Frame", {
+    Name = "Drawer", AnchorPoint = Vector2.new(0, 0),
+    Position = UDim2.new(0, -DW, 0, 0), Size = UDim2.new(0, DW, 1, 0),
+    BackgroundColor3 = BG, BorderSizePixel = 0, ZIndex = 2,
+}, Gui)
+new("UIGradient", { Rotation = 0, Color = ColorSequence.new(Color3.fromRGB(26, 26, 26), Color3.fromRGB(12, 12, 12)) }, Drawer)
+
+local EdgeGlow = new("Frame", {
+    Position = UDim2.new(1, 0, 0, 0), Size = UDim2.new(0, 22, 1, 0),
+    BackgroundColor3 = GREEN, BorderSizePixel = 0, ZIndex = 2, Visible = false,
+}, Drawer)
+new("UIGradient", { Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.7), NumberSequenceKeypoint.new(1, 1) }) }, EdgeGlow)
+
+local EdgeLine = new("Frame", {
+    Position = UDim2.new(1, -3, 0, 0), Size = UDim2.new(0, 3, 1, 0),
+    BackgroundColor3 = WHITE, BorderSizePixel = 0, ZIndex = 4,
+}, Drawer)
+local EdgeGrad = new("UIGradient", {
+    Rotation = 90, Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, GREEN_DARK), ColorSequenceKeypoint.new(0.5, GREEN_LIGHT), ColorSequenceKeypoint.new(1, GREEN_DARK) }),
+}, EdgeLine)
+
+local Logo = new("Frame", { Position = UDim2.fromOffset(16, 18), Size = UDim2.fromOffset(38, 38), BackgroundColor3 = Color3.fromRGB(30, 30, 30), ZIndex = 3 }, Drawer)
+corner(Logo, 19)
+new("UIStroke", { Color = GREEN, Thickness = 1.5 }, Logo)
+local LogoFallback = new("ImageLabel", {
+    AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromOffset(20, 20),
+    BackgroundTransparency = 1, ImageColor3 = GREEN, ZIndex = 4,
+}, Logo)
+setIcon(LogoFallback, "music")
+local LogoImg = new("ImageLabel", { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Image = "", ScaleType = Enum.ScaleType.Crop, ZIndex = 5 }, Logo)
+corner(LogoImg, 19)
+loadDecalInto(LogoImg, LogoFallback, ToggleAssetId)
+
+label(Drawer, { Position = UDim2.fromOffset(64, 16), Size = UDim2.fromOffset(190, 22), Text = "Your Library", Font = Enum.Font.GothamBold, TextSize = 19, TextColor3 = WHITE, ZIndex = 3 })
+local CountLabel = label(Drawer, { Position = UDim2.fromOffset(64, 38), Size = UDim2.fromOffset(190, 16), Text = "Playlist  •  0 songs", TextSize = 12, TextColor3 = GRAY, ZIndex = 3 })
+
+-- Search
+local SearchFrame = new("Frame", { Position = UDim2.fromOffset(16, 72), Size = UDim2.fromOffset(DW - 36, 38), BackgroundColor3 = FIELD, ZIndex = 3 }, Drawer)
+corner(SearchFrame, 19)
+local SearchStroke = new("UIStroke", { Color = GREEN, Thickness = 1.5, Transparency = 1 }, SearchFrame)
+local SearchIcon = new("ImageLabel", {
+    AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 14, 0.5, 0), Size = UDim2.fromOffset(16, 16),
+    BackgroundTransparency = 1, ImageColor3 = GRAY, ZIndex = 4,
+}, SearchFrame)
+setIcon(SearchIcon, "search")
+local SearchBox = new("TextBox", {
+    Position = UDim2.fromOffset(40, 0), Size = UDim2.new(1, -52, 1, 0), BackgroundTransparency = 1,
+    Text = "", PlaceholderText = "Search songs", PlaceholderColor3 = Color3.fromRGB(130, 130, 130),
+    Font = Enum.Font.Gotham, TextSize = 14, TextColor3 = WHITE, TextXAlignment = Enum.TextXAlignment.Left,
+    ClearTextOnFocus = false, ZIndex = 4,
+}, SearchFrame)
+SearchBox.Focused:Connect(function() tween(SearchStroke, 0.15, { Transparency = 0 }) end)
+SearchBox.FocusLost:Connect(function() tween(SearchStroke, 0.15, { Transparency = 1 }) end)
+
+-- Pills
+local function pill(text, x, w)
+    local b = new("TextButton", { Position = UDim2.fromOffset(x, 120), Size = UDim2.fromOffset(w, 28), BackgroundColor3 = FIELD, Text = text, Font = Enum.Font.GothamBold, TextSize = 12, TextColor3 = WHITE, AutoButtonColor = false, ZIndex = 3 }, Drawer)
+    corner(b, 14)
+    return b
+end
+local PillAll = pill("All", 16, 52)
+local PillLiked = pill("Liked", 76, 88)
+
+local function setPillStyle()
+    PillAll.BackgroundColor3 = onlyLiked and FIELD or GREEN
+    PillAll.TextColor3 = onlyLiked and WHITE or BLACK
+    PillLiked.BackgroundColor3 = onlyLiked and GREEN or FIELD
+    PillLiked.TextColor3 = onlyLiked and BLACK or WHITE
+end
+
+-- Add Song Button
+local AddBtn = new("TextButton", {
+    Position = UDim2.fromOffset(DW - 80, 120), Size = UDim2.fromOffset(64, 28),
+    BackgroundColor3 = GREEN, Text = "+ Add", Font = Enum.Font.GothamBold, TextSize = 12,
+    TextColor3 = BLACK, AutoButtonColor = false, ZIndex = 3,
+}, Drawer)
+corner(AddBtn, 14)
+
+-- Category Tabs
+local CatScroll = new("ScrollingFrame", {
+    Position = UDim2.fromOffset(16, 156), Size = UDim2.new(1, -32, 0, 30),
+    BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 0,
+    CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.X,
+    ScrollingDirection = Enum.ScrollingDirection.X, ZIndex = 3,
+}, Drawer)
+new("UIListLayout", { Padding = UDim.new(0, 6), FillDirection = Enum.FillDirection.Horizontal, SortOrder = Enum.SortOrder.LayoutOrder }, CatScroll)
+
+local CatButtons = {}
+local function buildCategories()
+    for _, btn in ipairs(CatButtons) do btn:Destroy() end
+    CatButtons = {}
+    
+    for idx, catName in ipairs(Categories) do
+        local isActive = (activeCategory == catName)
+        local cb = new("TextButton", {
+            Size = UDim2.fromOffset(0, 28), AutomaticSize = Enum.AutomaticSize.X,
+            BackgroundColor3 = isActive and GREEN or FIELD,
+            Text = "  " .. catName .. "  ", Font = Enum.Font.GothamBold, TextSize = 11,
+            TextColor3 = isActive and BLACK or WHITE, AutoButtonColor = false, ZIndex = 4, LayoutOrder = idx
+        }, CatScroll)
+        corner(cb, 14)
+        table.insert(CatButtons, cb)
+        
+        cb.MouseButton1Click:Connect(function()
+            activeCategory = catName
+            onlyLiked = false
+            setPillStyle()
+            buildCategories()
+            applyFilter() -- อัปเดตลิสต์
+            
+            -- 🔴 บังคับเปลี่ยนเพลงเป็นเพลงแรกของหมวดหมู่ใหม่ทันที
+            local firstInCat = nil
+            for i, t in ipairs(Tracks) do
+                if t.category == activeCategory then
+                    firstInCat = i
+                    break
+                end
+            end
+            if firstInCat then
+                loadTrack(firstInCat)
+                if playing then setPlaying(true) end
+            end
+        end)
+    end
+end
+
+-- Separator
+new("Frame", { Position = UDim2.fromOffset(16, 192), Size = UDim2.new(1, -36, 0, 1), BackgroundColor3 = Color3.fromRGB(50, 50, 50), BorderSizePixel = 0, ZIndex = 3 }, Drawer)
+
+-- List
+local List = new("ScrollingFrame", {
+    Position = UDim2.fromOffset(8, 200), Size = UDim2.new(1, -22, 1, -212),
+    BackgroundTransparency = 1, BorderSizePixel = 0, ScrollBarThickness = 3, ScrollBarImageColor3 = GREEN,
+    CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y,
+    ScrollingDirection = Enum.ScrollingDirection.Y, ZIndex = 3,
+}, Drawer)
+new("UIListLayout", { Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder }, List)
+
+local NoResults = label(Drawer, {
+    Position = UDim2.fromOffset(16, 220), Size = UDim2.new(1, -36, 0, 30), Text = "No songs found",
+    TextSize = 13, TextColor3 = GRAY, TextXAlignment = Enum.TextXAlignment.Center, ZIndex = 3,
+})
+NoResults.Visible = false
+
+-- Add Song Panel
+local AddPanel = new("Frame", {
+    Position = UDim2.fromOffset(8, 200), Size = UDim2.new(1, -22, 0, 120),
+    BackgroundColor3 = Color3.fromRGB(28, 28, 28), Visible = false, ZIndex = 10,
+}, Drawer)
+corner(AddPanel, 10)
+new("UIStroke", { Color = GREEN, Thickness = 1 }, AddPanel)
+
+local AddNameBox = new("TextBox", {
+    Position = UDim2.fromOffset(8, 8), Size = UDim2.new(1, -16, 0, 28),
+    BackgroundColor3 = FIELD, Text = "", PlaceholderText = "Song name", PlaceholderColor3 = DIM,
+    Font = Enum.Font.Gotham, TextSize = 13, TextColor3 = WHITE, ClearTextOnFocus = false, ZIndex = 11,
+}, AddPanel)
+corner(AddNameBox, 6)
+
+local AddIdBox = new("TextBox", {
+    Position = UDim2.fromOffset(8, 42), Size = UDim2.new(1, -16, 0, 28),
+    BackgroundColor3 = FIELD, Text = "", PlaceholderText = "Sound ID (numbers only)", PlaceholderColor3 = DIM,
+    Font = Enum.Font.Gotham, TextSize = 13, TextColor3 = WHITE, ClearTextOnFocus = false, ZIndex = 11,
+}, AddPanel)
+corner(AddIdBox, 6)
+
+local AddCheckBtn = new("TextButton", {
+    Position = UDim2.fromOffset(8, 76), Size = UDim2.new(1, -16, 0, 30),
+    BackgroundColor3 = GREEN, Text = "Check & Add", Font = Enum.Font.GothamBold, TextSize = 13,
+    TextColor3 = BLACK, AutoButtonColor = false, ZIndex = 11,
+}, AddPanel)
+corner(AddCheckBtn, 6)
+
+local AddStatus = label(AddPanel, {
+    Position = UDim2.fromOffset(8, 108), Size = UDim2.new(1, -16, 0, 12),
+    Text = "", TextSize = 11, TextColor3 = GRAY, ZIndex = 11,
+})
+
+-- Tab
+local Tab = new("TextButton", {
+    Name = "Tab", AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(1, -12, 0.5, 0),
+    Size = UDim2.fromOffset(42, 96), BackgroundColor3 = GREEN, Text = "", AutoButtonColor = false, ZIndex = 8,
+}, Drawer)
+corner(Tab, 14)
+new("UIStroke", { Color = GREEN_LIGHT, Thickness = 1.5, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }, Tab)
+local TabArrow = new("ImageLabel", {
+    AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0, 26, 0.5, 0),
+    Size = UDim2.fromOffset(24, 24), BackgroundTransparency = 1, ImageColor3 = BLACK, ZIndex = 9,
+}, Tab)
+setIcon(TabArrow, "chevron-right")
+
+--========= CREATE ROWS =========--
+local function createRows()
+    for _, r in ipairs(Rows) do
+        if r.frame then r.frame:Destroy() end
+    end
+    Rows = {}
+
+    for i, t in ipairs(Tracks) do
+        local row = new("TextButton", {
+            Name = "Row" .. i, Size = UDim2.new(1, -6, 0, 56),
+            BackgroundColor3 = GREEN, BackgroundTransparency = 1,
+            Text = "", AutoButtonColor = false, LayoutOrder = i, ZIndex = 4,
+        }, List)
+        corner(row, 10)
+
+        local accent = new("Frame", {
+            AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 0, 0.5, 0),
+            Size = UDim2.fromOffset(3, 28), BackgroundColor3 = GREEN, BorderSizePixel = 0,
+            Visible = false, ZIndex = 5,
+        }, row)
+        corner(accent, 2)
+
+        local art = new("Frame", {
+            Position = UDim2.fromOffset(10, 8), Size = UDim2.fromOffset(40, 40),
+            BackgroundColor3 = t.color, ZIndex = 5,
+        }, row)
+        corner(art, 7)
+        new("UIGradient", { Rotation = 45, Color = ColorSequence.new(WHITE, Color3.fromRGB(110, 110, 110)) }, art)
+
+        local ic = new("ImageLabel", {
+            AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5),
+            Size = UDim2.fromOffset(18, 18), BackgroundTransparency = 1, ImageColor3 = WHITE,
+            ImageTransparency = 0.15, ZIndex = 6,
+        }, art)
+        setIcon(ic, "music")
+
+        local overlay = new("Frame", {
+            Size = UDim2.fromScale(1, 1), BackgroundColor3 = BLACK,
+            BackgroundTransparency = 0.4, Visible = false, ZIndex = 7,
+        }, art)
+        corner(overlay, 7)
+        local bars = {}
+        for n = 1, 3 do
+            bars[n] = new("Frame", {
+                AnchorPoint = Vector2.new(0, 1), Position = UDim2.fromOffset(11 + (n - 1) * 7, 28),
+                Size = UDim2.fromOffset(3, 4), BackgroundColor3 = GREEN, BorderSizePixel = 0, ZIndex = 8,
+            }, overlay)
+            corner(bars[n], 2)
+        end
+
+        local title = label(row, {
+            Position = UDim2.fromOffset(60, 10), Size = UDim2.new(1, -165, 0, 18),
+            Text = t.title, Font = Enum.Font.GothamBold, TextSize = 14, TextColor3 = WHITE,
+            TextTruncate = Enum.TextTruncate.AtEnd, ZIndex = 5,
+        })
+        label(row, {
+            Position = UDim2.fromOffset(60, 29), Size = UDim2.new(1, -165, 0, 16),
+            Text = t.artist, TextSize = 12, TextColor3 = GRAY,
+            TextTruncate = Enum.TextTruncate.AtEnd, ZIndex = 5,
+        })
+
+        local statusLabel = label(row, {
+            AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -80, 0.5, 0),
+            Size = UDim2.fromOffset(50, 16),
+            Text = "●",
+            TextSize = 16, TextColor3 = t.status == true and GREEN or (t.status == false and RED or STATUS_YELLOW),
+            TextXAlignment = Enum.TextXAlignment.Center, ZIndex = 5,
+        })
+
+        local heartBtn, heartIcon = iconButton(row, "heart", UDim2.new(1, -46, 0.5, 0), 32, 17, DIM, Vector2.new(1, 0.5), 6)
+
+        Rows[i] = {
+            frame = row, title = title, overlay = overlay, bars = bars, accent = accent,
+            heartBtn = heartBtn, heartIcon = heartIcon, statusLabel = statusLabel,
+        }
+
+        row.MouseButton1Click:Connect(function()
+            loadTrack(i)
+            setPlaying(true)
+            if not playerOpened then setPlayerOpen(true) end
+        end)
+
+        row.MouseEnter:Connect(function()
+            if i ~= index then tween(row, 0.12, { BackgroundTransparency = 0.93, BackgroundColor3 = WHITE }) end
+        end)
+        row.MouseLeave:Connect(function()
+            if i ~= index then tween(row, 0.12, { BackgroundTransparency = 1 }) end
+            row.BackgroundColor3 = GREEN
+        end)
+
+        heartBtn.MouseButton1Click:Connect(function()
+            toggleLike(i)
+            tween(heartIcon, 0.08, { Size = UDim2.fromOffset(23, 23) })
+            task.delay(0.08, function() tween(heartIcon, 0.14, { Size = UDim2.fromOffset(17, 17) }) end)
+        end)
+        heartBtn.MouseEnter:Connect(function()
+            if not liked[i] then tween(heartIcon, 0.1, { ImageColor3 = WHITE }) end
+        end)
+        heartBtn.MouseLeave:Connect(function()
+            tween(heartIcon, 0.1, { ImageColor3 = liked[i] and GREEN or DIM })
+        end)
+    end
+end
+
+--========= FLOATING PLAYER =========--
+local Root = new("Frame", {
+    Name = "Root", AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.fromOffset(360, 190),
+    Position = StartPosition, BackgroundTransparency = 1, Visible = false, ZIndex = 3,
+}, Gui)
+local RootScale = new("UIScale", { Scale = 0 }, Root)
+
+local Glow2 = new("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.new(1, 34, 1, 34), BackgroundColor3 = GREEN, BackgroundTransparency = 0.95, BorderSizePixel = 0, ZIndex = 0 }, Root)
+corner(Glow2, 30)
+local Glow1 = new("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.new(1, 16, 1, 16), BackgroundColor3 = GREEN, BackgroundTransparency = 0.9, BorderSizePixel = 0, ZIndex = 0 }, Root)
+corner(Glow1, 22)
+
+local Card = new("Frame", { Name = "Card", Size = UDim2.fromScale(1, 1), BackgroundColor3 = BG, BorderSizePixel = 0, ZIndex = 1 }, Root)
+corner(Card, 14)
+local Stroke = new("UIStroke", { Color = WHITE, Thickness = 2.5, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }, Card)
+local StrokeGrad = new("UIGradient", {
+    Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, GREEN), ColorSequenceKeypoint.new(0.35, GREEN_LIGHT), ColorSequenceKeypoint.new(0.7, GREEN_DARK), ColorSequenceKeypoint.new(1, GREEN) }),
+}, Stroke)
+new("UIGradient", { Rotation = 90, Color = ColorSequence.new(Color3.fromRGB(28, 28, 28), Color3.fromRGB(12, 12, 12)) }, Card)
+
+local Dragger = new("TextButton", { Position = UDim2.fromOffset(0, 0), Size = UDim2.new(1, 0, 0, 85), BackgroundTransparency = 1, Text = "", AutoButtonColor = false, ZIndex = 1 }, Card)
+do
+    local dragging, dragStart, startPos
+    Dragger.InputBegan:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+            dragging = true; dragStart = i.Position; startPos = Root.Position
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(i)
+        if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
+            local d = i.Position - dragStart
+            Root.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
+        end
+    end)
+    UserInputService.InputEnded:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then dragging = false end
+    end)
+end
+
+local Art = new("ImageLabel", { Position = UDim2.fromOffset(14, 14), Size = UDim2.fromOffset(84, 84), BackgroundColor3 = Tracks[1] and Tracks[1].color or BG, Image = "", ScaleType = Enum.ScaleType.Crop, ZIndex = 2 }, Card)
+corner(Art, 10)
+new("UIGradient", { Rotation = 45, Color = ColorSequence.new(WHITE, Color3.fromRGB(110, 110, 110)) }, Art)
+new("UIStroke", { Color = WHITE, Transparency = 0.85, Thickness = 1 }, Art)
+local ArtIcon = new("ImageLabel", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromOffset(40, 40), BackgroundTransparency = 1, ImageColor3 = WHITE, ImageTransparency = 0.15, ZIndex = 3 }, Art)
+setIcon(ArtIcon, "music")
+
+local NowLabel = label(Card, { Position = UDim2.fromOffset(110, 14), Size = UDim2.fromOffset(80, 14), Text = "PAUSED", Font = Enum.Font.GothamBold, TextSize = 10, TextColor3 = GRAY })
+local Title = label(Card, { Position = UDim2.fromOffset(110, 34), Size = UDim2.fromOffset(190, 24), Text = "", Font = Enum.Font.GothamBold, TextSize = 18, TextColor3 = WHITE, TextTruncate = Enum.TextTruncate.AtEnd })
+local Artist = label(Card, { Position = UDim2.fromOffset(110, 60), Size = UDim2.fromOffset(190, 20), Text = "", TextSize = 14, TextColor3 = GRAY, TextTruncate = Enum.TextTruncate.AtEnd })
+
+local EqBars = {}
+do
+    local holder = new("Frame", { Position = UDim2.fromOffset(196, 14), Size = UDim2.fromOffset(24, 13), BackgroundTransparency = 1, ZIndex = 2 }, Card)
+    for n = 1, 4 do
+        EqBars[n] = new("Frame", { AnchorPoint = Vector2.new(0, 1), Position = UDim2.fromOffset((n - 1) * 6, 13), Size = UDim2.fromOffset(3, 3), BackgroundColor3 = GREEN, BorderSizePixel = 0, ZIndex = 2 }, holder)
+        corner(EqBars[n], 2)
+    end
+end
+
+local Like, LikeIcon = iconButton(Card, "heart", UDim2.fromOffset(306, 32), 32, 22, GRAY)
+local Close, CloseIcon = iconButton(Card, "x", UDim2.fromOffset(328, 6), 26, 14, GRAY)
+
+local BarHit = new("TextButton", { Position = UDim2.fromOffset(14, 108), Size = UDim2.fromOffset(332, 18), BackgroundTransparency = 1, Text = "", AutoButtonColor = false, ZIndex = 3 }, Card)
+local Track = new("Frame", { AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 0, 0.5, 0), Size = UDim2.new(1, 0, 0, 4), BackgroundColor3 = Color3.fromRGB(83, 83, 83), BorderSizePixel = 0, ZIndex = 3 }, BarHit)
+corner(Track, 2)
+local Fill = new("Frame", { Size = UDim2.fromScale(0, 1), BackgroundColor3 = WHITE, BorderSizePixel = 0, ZIndex = 4 }, Track)
+corner(Fill, 2)
+local Knob = new("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(1, 0.5), Size = UDim2.fromOffset(12, 12), BackgroundColor3 = WHITE, BorderSizePixel = 0, BackgroundTransparency = 1, ZIndex = 5 }, Fill)
+corner(Knob, 6)
+
+local TimeL = label(Card, { Position = UDim2.fromOffset(14, 126), Size = UDim2.fromOffset(60, 14), Text = "0:00", TextSize = 11, TextColor3 = GRAY })
+local TimeR = label(Card, { Position = UDim2.fromOffset(286, 126), Size = UDim2.fromOffset(60, 14), Text = "0:00", TextSize = 11, TextColor3 = GRAY, TextXAlignment = Enum.TextXAlignment.Right })
+
+local CY = 160
+local A = Vector2.new(0.5, 0.5)
+local Shuffle, ShuffleIcon = iconButton(Card, "shuffle", UDim2.fromOffset(60, CY), 34, 20, GRAY, A)
+local Prev, PrevIcon = iconButton(Card, "skip-back", UDim2.fromOffset(120, CY), 34, 20, WHITE, A)
+local Play, PlayIcon = iconButton(Card, "play", UDim2.fromOffset(180, CY), 44, 22, BLACK, A)
+local Next, NextIcon = iconButton(Card, "skip-forward", UDim2.fromOffset(240, CY), 34, 20, WHITE, A)
+local Repeat, RepeatIcon = iconButton(Card, "repeat", UDim2.fromOffset(300, CY), 34, 20, GRAY, A)
+Play.BackgroundTransparency = 0
+Play.BackgroundColor3 = WHITE
+corner(Play, 22)
+
+local Toggle = new("TextButton", { Name = "Toggle", AnchorPoint = Vector2.new(0, 0.5), Size = UDim2.fromOffset(50, 50), Position = ToggleStart, BackgroundColor3 = BG, Text = "", AutoButtonColor = false, ZIndex = 10 }, Gui)
+corner(Toggle, 25)
+new("UIStroke", { Color = GREEN_LIGHT, Thickness = 2, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }, Toggle)
+local ToggleFallback = new("ImageLabel", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromOffset(26, 26), BackgroundTransparency = 1, ImageColor3 = GREEN, ZIndex = 11 }, Toggle)
+setIcon(ToggleFallback, "music")
+local ToggleIcon = new("ImageLabel", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Image = "", ScaleType = Enum.ScaleType.Crop, ZIndex = 12 }, Toggle)
+corner(ToggleIcon, 25)
+loadDecalInto(ToggleIcon, ToggleFallback, ToggleAssetId)
+
+--========= TOAST =========--
+local Toast = new("Frame", { Name = "Toast", AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, 70), Size = UDim2.fromOffset(280, 50), BackgroundColor3 = Color3.fromRGB(30, 30, 30), ZIndex = 30, Visible = false }, Gui)
+corner(Toast, 23)
+new("UIStroke", { Color = GREEN, Thickness = 1.5 }, Toast)
+local ToastIconImg = new("ImageLabel", { AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 14, 0.5, 0), Size = UDim2.fromOffset(20, 20), BackgroundTransparency = 1, ImageColor3 = GREEN, ZIndex = 31 }, Toast)
+setIcon(ToastIconImg, "heart")
+local ToastText = label(Toast, { Position = UDim2.fromOffset(44, 5), Size = UDim2.new(1, -56, 0, 18), Text = "", Font = Enum.Font.GothamBold, TextSize = 13, TextColor3 = WHITE, ZIndex = 31 })
+local ToastSub = label(Toast, { Position = UDim2.fromOffset(44, 24), Size = UDim2.new(1, -56, 0, 16), Text = "", TextSize = 11, TextColor3 = GRAY, TextTruncate = Enum.TextTruncate.AtEnd, ZIndex = 31 })
+
+local toastToken = 0
+local function showToast(added, title, subtitle)
+    toastToken = toastToken + 1
+    local my = toastToken
+    ToastText.Text = title or (added and "Added to Liked Songs" or "Removed from Liked Songs")
+    ToastSub.Text = subtitle or ""
+    ToastIconImg.ImageColor3 = added and GREEN or GRAY
+    Toast.Visible = true
+    tween(Toast, 0.4, { Position = UDim2.new(0.5, 0, 1, -28) }, Enum.EasingStyle.Back)
+    task.delay(2.5, function()
+        if toastToken == my then
+            tween(Toast, 0.3, { Position = UDim2.new(0.5, 0, 1, 70) })
+            task.delay(0.32, function() if toastToken == my then Toast.Visible = false end end)
+        end
+    end)
+end
+
+--========= CORE =========--
+local function setProgressVisual(ratio)
+    Fill.Size = UDim2.fromScale(math.clamp(ratio, 0, 1), 1)
+end
+
+applyFilter = function()
+    local q = string.lower(SearchBox.Text)
+    local any = false
+    currentVisibleTrackIndices = {} -- รีเซ็ต index เพลงที่มองเห็น
+
+    for i, r in ipairs(Rows) do
+        local t = Tracks[i]
+        local matchQuery = q == "" or string.find(string.lower(t.title), q, 1, true) or string.find(string.lower(t.artist), q, 1, true)
+        local matchCat = (t.category == activeCategory)
+        local matchLike = (not onlyLiked or liked[i])
+        
+        local vis = matchQuery and matchCat and matchLike
+        r.frame.Visible = vis
+        if vis then
+            any = true
+            table.insert(currentVisibleTrackIndices, i) -- เก็บ index เพลงที่โชว์อยู่
+        end
+    end
+    NoResults.Visible = not any
+    NoResults.Text = (onlyLiked and q == "") and "No liked songs yet" or "No songs found"
+end
+
+local function refreshRows()
+    local count = 0
+    for i, r in ipairs(Rows) do
+        local cur = i == index
+        r.title.TextColor3 = cur and GREEN or WHITE
+        r.overlay.Visible = cur
+        r.accent.Visible = cur
+        r.frame.BackgroundTransparency = cur and 0.88 or 1
+        r.heartIcon.ImageColor3 = liked[i] and GREEN or DIM
+        local t = Tracks[i]
+        r.statusLabel.Text = "●"
+        r.statusLabel.TextColor3 = t.status == true and GREEN or (t.status == false and RED or STATUS_YELLOW)
+        if liked[i] then count = count + 1 end
+    end
+    PillLiked.Text = count > 0 and ("Liked  " .. count) or "Liked"
+    CountLabel.Text = "Playlist  •  " .. #Tracks .. (#Tracks == 1 and " song" or " songs")
+end
+
+local function updateLike()
+    LikeIcon.ImageColor3 = liked[index] and GREEN or GRAY
+    refreshRows()
+    if onlyLiked then applyFilter() end
+end
+
+function toggleLike(i)
+    liked[i] = not liked[i]
+    updateLike()
+    showToast(liked[i] == true, liked[i] and "Added to Liked Songs" or "Removed from Liked Songs", Tracks[i].title)
+end
+
+function loadTrack(i)
+    index = i
+    position = 0
+    local t = Tracks[index]
+    if not t then return end
+
+    Title.Text = t.title
+    Artist.Text = t.artist
+    TimeL.Text = "0:00"
+    TimeR.Text = fmt(t.length)
+    setProgressVisual(0)
+    tween(Art, 0.3, { BackgroundColor3 = t.color })
+    Art.Image = ""
+    ArtIcon.Visible = true
+
+    if t.sound then
+        Sound:Stop()
+        Sound.SoundId = "rbxassetid://" .. tostring(t.sound)
+        Sound.TimePosition = 0
+        Sound.Looped = false
+        if playing then
+            Sound:Play()
+        end
+    else
+        Sound:Stop()
+        Sound.SoundId = ""
+    end
+    updateLike()
+end
+
+function setPlaying(state)
+    playing = state
+    setIcon(PlayIcon, playing and "pause" or "play")
+    NowLabel.TextColor3 = playing and GREEN or GRAY
+    NowLabel.Text = playing and "NOW PLAYING" or "PAUSED"
+
+    local t = Tracks[index]
+    if t and t.sound then
+        if playing then
+            Sound:Play()
+        else
+            Sound:Pause()
+        end
+    end
+end
+
+function seek(ratio)
+    local t = Tracks[index]
+    if not t then return end
+    position = math.clamp(ratio, 0, 1) * t.length
+    if t.sound then Sound.TimePosition = position end
+    setProgressVisual(position / t.length)
+    TimeL.Text = fmt(position)
+end
+
+local function changeTrack(dir)
+    if #currentVisibleTrackIndices == 0 then return end
+    
+    -- หา index ปัจจุบันในลิสต์ที่มองเห็น
+    local currentPos = 1
+    for k, v in ipairs(currentVisibleTrackIndices) do
+        if v == index then currentPos = k; break end
+    end
+
+    local n
+    if shuffleOn and #currentVisibleTrackIndices > 1 then
+        repeat n = currentVisibleTrackIndices[math.random(1, #currentVisibleTrackIndices)] until n ~= index
+    else
+        local nextIdx = ((currentPos - 1 + dir) % #currentVisibleTrackIndices) + 1
+        n = currentVisibleTrackIndices[nextIdx]
+    end
+    loadTrack(n)
+end
+
+function setPlayerOpen(state)
+    playerOpened = state
+    if state then
+        Root.Visible = true
+        RootScale.Scale = 0.5
+        tween(RootScale, 0.4, { Scale = 1 }, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+        tween(ToggleIcon, 0.2, { ImageTransparency = 0 })
+        tween(ToggleFallback, 0.2, { ImageTransparency = 0 })
+    else
+        tween(RootScale, 0.2, { Scale = 0 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+        tween(ToggleIcon, 0.2, { ImageTransparency = 0.45 })
+        tween(ToggleFallback, 0.2, { ImageTransparency = 0.45 })
+        task.delay(0.22, function() if not playerOpened then Root.Visible = false end end)
+    end
+end
+
+local function setDrawerOpen(state)
+    drawerOpened = state
+    if state then EdgeGlow.Visible = true end
+    tween(Drawer, 0.5, { Position = UDim2.new(0, state and 0 or -DW, 0, 0) }, Enum.EasingStyle.Quint)
+    tween(TabArrow, 0.35, { Rotation = state and 180 or 0 })
+    if not state then
+        AddPanel.Visible = false
+        task.delay(0.5, function() if not drawerOpened then EdgeGlow.Visible = false end end)
+    end
+end
+
+--========= ADD SONG FLOW =========--
+AddBtn.MouseButton1Click:Connect(function()
+    AddPanel.Visible = not AddPanel.Visible
+    if AddPanel.Visible then
+        AddNameBox.Text = ""
+        AddIdBox.Text = ""
+        AddStatus.Text = ""
+        AddStatus.TextColor3 = GRAY
+    end
+end)
+
+AddCheckBtn.MouseButton1Click:Connect(function()
+    local name = AddNameBox.Text
+    local idNum = tonumber(AddIdBox.Text)
+
+    if name == "" or not idNum then
+        AddStatus.Text = "❌ กรุณากรอกชื่อและ ID (ตัวเลข)"
+        AddStatus.TextColor3 = RED
+        return
+    end
+
+    AddCheckBtn.Text = "Checking..."
+    AddStatus.Text = "⏳ กำลังตรวจสอบ ID..."
+    AddStatus.TextColor3 = GRAY
+    AddCheckBtn.Active = false
+
+    task.spawn(function()
+        local ok = checkSoundId(idNum)
+        AddCheckBtn.Text = "Check & Add"
+        AddCheckBtn.Active = true
+
+        if ok then
+            AddStatus.Text = "✅ ID ใช้ได้! กำลังเพิ่มเพลง..."
+            AddStatus.TextColor3 = GREEN
+            task.wait(0.5)
+
+            local newCat = activeCategory
+            table.insert(SongList, { name = name, id = idNum, length = 180, status = true, category = newCat })
+            rebuildTracks()
+            buildCategories()
+            createRows()
+            refreshRows()
+            applyFilter()
+
+            AddPanel.Visible = false
+            showToast(true, "เพิ่มเพลงสำเร็จ", name)
+        else
+            AddStatus.Text = "❌ ID ใช้ไม่ได้ (อาจถูก moderation หรือเป็น private)"
+            AddStatus.TextColor3 = RED
+            showToast(false, "ID ใช้ไม่ได้", "ลองตรวจสอบ ID อีกครั้ง")
+        end
+    end)
+end)
+
+-- ตรวจสอบ ID ของเพลงทั้งหมดตอนเริ่ม
+task.spawn(function()
+    for i, t in ipairs(Tracks) do
+        if t.sound and t.status == nil then
+            local ok = checkSoundId(t.sound)
+            t.status = ok
+            if SongList[i] then SongList[i].status = ok end
+            if Rows[i] then
+                Rows[i].statusLabel.Text = "●"
+                Rows[i].statusLabel.TextColor3 = ok and GREEN or RED
+            end
+            task.wait(0.2)
+        end
+    end
+    refreshRows()
+end)
+
+--========= EVENTS =========--
+Tab.MouseButton1Click:Connect(function() setDrawerOpen(not drawerOpened) end)
+Tab.MouseEnter:Connect(function() tween(Tab, 0.12, { BackgroundColor3 = GREEN_LIGHT }) end)
+Tab.MouseLeave:Connect(function() tween(Tab, 0.12, { BackgroundColor3 = GREEN }) end)
+
+SearchBox:GetPropertyChangedSignal("Text"):Connect(applyFilter)
+PillAll.MouseButton1Click:Connect(function() 
+    onlyLiked = false
+    setPillStyle()
+    applyFilter() 
+end)
+PillLiked.MouseButton1Click:Connect(function() 
+    onlyLiked = true
+    setPillStyle()
+    applyFilter() 
+end)
+
+do
+    local dragging, moved, dragStart, startPos
+    Toggle.InputBegan:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+            dragging = true; moved = false; dragStart = i.Position; startPos = Toggle.Position
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(i)
+        if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
+            local d = i.Position - dragStart
+            if d.Magnitude > 6 then moved = true end
+            if moved then Toggle.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y) end
+        end
+    end)
+    UserInputService.InputEnded:Connect(function(i)
+        if dragging and (i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch) then
+            dragging = false
+            if not moved then setPlayerOpen(not playerOpened) end
+        end
+    end)
+end
+Toggle.MouseEnter:Connect(function() tween(Toggle, 0.12, { Size = UDim2.fromOffset(55, 55) }) end)
+Toggle.MouseLeave:Connect(function() tween(Toggle, 0.12, { Size = UDim2.fromOffset(50, 50) }) end)
+
+UserInputService.InputBegan:Connect(function(i, processed)
+    if processed then return end
+    if i.KeyCode == PlayerKey then setPlayerOpen(not playerOpened) end
+    if i.KeyCode == DrawerKey then setDrawerOpen(not drawerOpened) end
+end)
+
+Play.MouseButton1Click:Connect(function()
+    setPlaying(not playing)
+    tween(Play, 0.08, { Size = UDim2.fromOffset(40, 40) })
+    task.delay(0.08, function() tween(Play, 0.12, { Size = UDim2.fromOffset(44, 44) }) end)
+end)
+Next.MouseButton1Click:Connect(function() changeTrack(1) end)
+Prev.MouseButton1Click:Connect(function() if position > 3 then seek(0) else changeTrack(-1) end end)
+
+Shuffle.MouseButton1Click:Connect(function()
+    shuffleOn = not shuffleOn
+    ShuffleIcon.ImageColor3 = shuffleOn and GREEN or GRAY
+end)
+Repeat.MouseButton1Click:Connect(function()
+    repeatMode = (repeatMode + 1) % 2
+    RepeatIcon.ImageColor3 = repeatMode == 1 and GREEN or GRAY
+    setIcon(RepeatIcon, repeatMode == 1 and "repeat-1" or "repeat")
+end)
+
+Like.MouseButton1Click:Connect(function()
+    toggleLike(index)
+    tween(LikeIcon, 0.08, { Size = UDim2.fromOffset(28, 28) })
+    task.delay(0.08, function() tween(LikeIcon, 0.12, { Size = UDim2.fromOffset(22, 22) }) end)
+end)
+
+Close.MouseButton1Click:Connect(function() setPlayerOpen(false) end)
+
+Shuffle.MouseEnter:Connect(function() if not shuffleOn then tween(ShuffleIcon, 0.1, { ImageColor3 = WHITE }) end end)
+Shuffle.MouseLeave:Connect(function() tween(ShuffleIcon, 0.1, { ImageColor3 = shuffleOn and GREEN or GRAY }) end)
+Repeat.MouseEnter:Connect(function() if repeatMode == 0 then tween(RepeatIcon, 0.1, { ImageColor3 = WHITE }) end end)
+Repeat.MouseLeave:Connect(function() tween(RepeatIcon, 0.1, { ImageColor3 = repeatMode == 1 and GREEN or GRAY }) end)
+Like.MouseEnter:Connect(function() if not liked[index] then tween(LikeIcon, 0.1, { ImageColor3 = WHITE }) end end)
+Like.MouseLeave:Connect(function() tween(LikeIcon, 0.1, { ImageColor3 = liked[index] and GREEN or GRAY }) end)
+Close.MouseEnter:Connect(function() tween(CloseIcon, 0.1, { ImageColor3 = WHITE }) end)
+Close.MouseLeave:Connect(function() tween(CloseIcon, 0.1, { ImageColor3 = GRAY }) end)
+
+local function barHover(on)
+    Fill.BackgroundColor3 = (on or scrubbing) and GREEN or WHITE
+    Knob.BackgroundTransparency = (on or scrubbing) and 0 or 1
+end
+BarHit.MouseEnter:Connect(function() barHover(true) end)
+BarHit.MouseLeave:Connect(function() barHover(false) end)
+local function scrubTo(x) seek((x - Track.AbsolutePosition.X) / Track.AbsoluteSize.X) end
+BarHit.InputBegan:Connect(function(i)
+    if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+        scrubbing = true; barHover(true); scrubTo(i.Position.X)
+    end
+end)
+UserInputService.InputChanged:Connect(function(i)
+    if scrubbing and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then scrubTo(i.Position.X) end
+end)
+UserInputService.InputEnded:Connect(function(i)
+    if scrubbing and (i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch) then
+        scrubbing = false; barHover(false)
+    end
+end)
+
+--========= MAIN LOOP =========--
+local clock = 0
+RunService.Heartbeat:Connect(function(dt)
+    clock = clock + dt
+    StrokeGrad.Rotation = (clock * 80) % 360
+    EdgeGrad.Offset = Vector2.new(0, ((clock * 0.45) % 2) - 1)
+    EdgeGlow.BackgroundTransparency = 0.05 * math.sin(clock * 2)
+
+    if drawerOpened then
+        TabArrow.Position = UDim2.new(0, 26, 0.5, 0)
+    else
+        TabArrow.Position = UDim2.new(0, 26 + 3 * math.sin(clock * 4), 0.5, 0)
+    end
+
+    if playing then
+        Glow1.BackgroundTransparency = 0.86 + 0.05 * math.sin(clock * 3)
+        Glow2.BackgroundTransparency = 0.94 + 0.03 * math.sin(clock * 3 + 1)
+        for n, bar in ipairs(EqBars) do
+            bar.Size = UDim2.fromOffset(3, 3 + 10 * math.abs(math.sin(clock * (3 + n * 1.3) + n * 1.7)))
+        end
+    else
+        Glow1.BackgroundTransparency = 0.92
+        Glow2.BackgroundTransparency = 0.97
+        for _, bar in ipairs(EqBars) do bar.Size = UDim2.fromOffset(3, 3) end
+    end
+
+    local r = Rows[index]
+    if r then
+        for n, bar in ipairs(r.bars) do
+            local h = playing and (4 + 18 * math.abs(math.sin(clock * (3 + n * 1.4) + n * 1.9))) or 4
+            bar.Size = UDim2.fromOffset(3, h)
+        end
+    end
+
+    if not playing or scrubbing then return end
+    local t = Tracks[index]
+    if not t then return end
+    if t.sound and Sound.IsPlaying then
+        position = Sound.TimePosition
+    else
+        position = position + dt
+    end
+    if position >= t.length then
+        if repeatMode == 1 then
+            seek(0)
+        else
+            changeTrack(1)
+        end
+        return
+    end
+    setProgressVisual(position / t.length)
+    TimeL.Text = fmt(position)
+end)
+
+--========= START =========--
+buildCategories()
+createRows()
+loadTrack(1)
+setPlaying(false)
+applyFilter()
+refreshRows()
+setPlayerOpen(true)
