@@ -1,0 +1,1053 @@
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local StarterGui = game:GetService("StarterGui")
+local Lighting = game:GetService("Lighting")
+local Stats = game:GetService("Stats")
+
+local LocalPlayer = Players.LocalPlayer
+
+local KOMAT = loadstring(game:HttpGet(
+"https://raw.githubusercontent.com/komayma273-cyber/Script-Evade/refs/heads/main/TAS"
+))()
+
+local Window = KOMAT:CreateWindow({
+    Title = "บูส FPS evade",
+    Subtitle = "KRYVEX HUB",
+    Theme = "normal",
+    ThemeAnimation = true,
+})
+
+-- =========================================
+-- หมวดที่ 1: FPS
+-- =========================================
+local FPSTab = Window:CreateTab("FPS", "activity")
+
+-- =========================================
+-- หมวดที่ 2: แสดง
+-- =========================================
+local DisplayTab = Window:CreateTab("แสดง", "eye")
+
+-- =========================================
+-- ระบบแจ้งเตือน
+-- =========================================
+local function notify(title, text)
+    pcall(function()
+        StarterGui:SetCore("SendNotification", {
+            Title = title,
+            Text = text,
+            Duration = 5,
+        })
+    end)
+end
+
+-- =========================================
+-- ฟังก์ชันปรับ Part
+-- =========================================
+local function smoothPart(part)
+    if not part or not part:IsA("BasePart") then return false end
+    local changed = false
+    if part.Material ~= Enum.Material.SmoothPlastic then
+        part.Material = Enum.Material.SmoothPlastic
+        changed = true
+    end
+    if part.Reflectance ~= 0 then
+        part.Reflectance = 0
+        changed = true
+    end
+    if part.CastShadow then
+        part.CastShadow = false
+        changed = true
+    end
+    return changed
+end
+
+local function stripDecorations(part)
+    if not part or not part:IsA("BasePart") then return 0 end
+    local removed = 0
+    for _, child in ipairs(part:GetChildren()) do
+        if child:IsA("Decal") or child:IsA("Texture")
+            or child:IsA("SurfaceGui") or child:IsA("SurfaceAppearance") then
+            child:Destroy()
+            removed += 1
+        end
+    end
+    return removed
+end
+
+local function isTreeModel(obj)
+    if not obj or not obj:IsA("Model") then return false end
+    return string.find(string.lower(obj.Name), "tree") ~= nil
+end
+
+local function isGrass(obj)
+    if not obj or not obj:IsA("BasePart") then return false end
+    local name = string.lower(obj.Name)
+    return string.find(name, "grass") ~= nil
+        or string.find(name, "weed") ~= nil
+        or string.find(name, "foliage") ~= nil
+        or string.find(name, "bush") ~= nil
+end
+
+local function removeTreeModel(model)
+    if not isTreeModel(model) then return 0 end
+    local removed = 0
+    for _, child in ipairs(model:GetDescendants()) do
+        if child:IsA("MeshPart") then
+            child:Destroy()
+            removed += 1
+        end
+    end
+    return removed
+end
+
+local function removeShadows()
+    Lighting.GlobalShadows = false
+    Lighting.Brightness = 1
+    Lighting.OutdoorAmbient = Color3.fromRGB(128, 128, 128)
+    Lighting.Ambient = Color3.fromRGB(128, 128, 128)
+    for _, obj in ipairs(Lighting:GetChildren()) do
+        if obj:IsA("PostEffect") then obj.Enabled = false end
+    end
+end
+
+local function stripAccessories(character)
+    if not character then return 0 end
+    local removed = 0
+    for _, obj in ipairs(character:GetChildren()) do
+        if obj:IsA("Accessory") or obj:IsA("Hat")
+            or obj:IsA("Shirt") or obj:IsA("Pants")
+            or obj:IsA("ShirtGraphic") then
+            obj:Destroy()
+            removed += 1
+        end
+    end
+    for _, obj in ipairs(character:GetDescendants()) do
+        if obj:IsA("Decal") then obj.Transparency = 1 end
+    end
+    return removed
+end
+
+local function stripAllPlayersAccessories()
+    local total = 0
+    for _, plr in ipairs(Players:GetPlayers()) do
+        total += stripAccessories(plr.Character)
+    end
+    return total
+end
+
+local function hideCharacter(character)
+    if not character then return 0 end
+    local count = 0
+    for _, obj in ipairs(character:GetDescendants()) do
+        if obj:IsA("BasePart") then
+            obj.Transparency = 1
+            obj.CanCollide = false
+            count += 1
+        elseif obj:IsA("Decal") then
+            obj.Transparency = 1
+        end
+    end
+    return count
+end
+
+local function hideAllOtherPlayers()
+    local total = 0
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer then
+            total += hideCharacter(plr.Character)
+        end
+    end
+    return total
+end
+
+local function removeEffects()
+    local removed = 0
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("ParticleEmitter") or obj:IsA("Smoke")
+            or obj:IsA("Fire") or obj:IsA("Sparkles")
+            or obj:IsA("Trail") or obj:IsA("Beam") then
+            obj:Destroy()
+            removed += 1
+        end
+    end
+    return removed
+end
+
+-- =========================================
+-- ระบบ Auto-Watch
+-- =========================================
+local autoWatchEnabled = false
+local stripDecorationsEnabled = false
+local removeTreeEnabled = false
+local removeClothingEnabled = false
+local hidePlayersEnabled = false
+local removeEffectsEnabled = false
+local watchedConnections = {}
+
+local function watchPart(part)
+    if part:GetAttribute("KRYVEX_Watched") then return end
+    part:SetAttribute("KRYVEX_Watched", true)
+
+    table.insert(watchedConnections, part:GetPropertyChangedSignal("Material"):Connect(function()
+        if autoWatchEnabled and part.Material ~= Enum.Material.SmoothPlastic then
+            part.Material = Enum.Material.SmoothPlastic
+        end
+    end))
+end
+
+local function watchDecorations(part)
+    if part:GetAttribute("KRYVEX_DecoWatched") then return end
+    part:SetAttribute("KRYVEX_DecoWatched", true)
+
+    table.insert(watchedConnections, part.ChildAdded:Connect(function(child)
+        if stripDecorationsEnabled and (
+            child:IsA("Decal") or child:IsA("Texture")
+            or child:IsA("SurfaceGui") or child:IsA("SurfaceAppearance")
+        ) then
+            task.defer(function()
+                if child and child.Parent then child:Destroy() end
+            end)
+        end
+    end))
+end
+
+local function watchCharacter(character)
+    if not character or character:GetAttribute("KRYVEX_CharWatched") then return end
+    character:SetAttribute("KRYVEX_CharWatched", true)
+
+    table.insert(watchedConnections, character.ChildAdded:Connect(function(child)
+        if removeClothingEnabled and (
+            child:IsA("Accessory") or child:IsA("Hat")
+            or child:IsA("Shirt") or child:IsA("Pants")
+            or child:IsA("ShirtGraphic")
+        ) then
+            task.defer(function()
+                if child and child.Parent then child:Destroy() end
+            end)
+        end
+        if hidePlayersEnabled and character ~= LocalPlayer.Character and child:IsA("BasePart") then
+            task.defer(function()
+                if child and child.Parent then
+                    child.Transparency = 1
+                    child.CanCollide = false
+                end
+            end)
+        end
+    end))
+
+    if hidePlayersEnabled and character ~= LocalPlayer.Character then
+        hideCharacter(character)
+    end
+end
+
+local function startAutoWatch(stripDeco, removeTree, removeClothing, hidePlayers, removeEffectsFlag)
+    stripDecorationsEnabled = stripDeco or false
+    removeTreeEnabled = removeTree or false
+    removeClothingEnabled = removeClothing or false
+    hidePlayersEnabled = hidePlayers or false
+    removeEffectsEnabled = removeEffectsFlag or false
+
+    if autoWatchEnabled then return end
+    autoWatchEnabled = true
+
+    task.spawn(function()
+        if removeClothingEnabled then stripAllPlayersAccessories() end
+        if hidePlayersEnabled then hideAllOtherPlayers() end
+        if removeEffectsEnabled then removeEffects() end
+
+        if removeTreeEnabled then
+            for _, obj in ipairs(workspace:GetDescendants()) do
+                if isTreeModel(obj) then removeTreeModel(obj) end
+            end
+            for _, obj in ipairs(workspace:GetDescendants()) do
+                if isGrass(obj) then obj:Destroy() end
+            end
+        end
+
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj:IsA("BasePart") then
+                smoothPart(obj)
+                watchPart(obj)
+                if stripDecorationsEnabled then
+                    stripDecorations(obj)
+                    watchDecorations(obj)
+                end
+            end
+        end
+    end)
+
+    table.insert(watchedConnections, workspace.DescendantAdded:Connect(function(obj)
+        if not autoWatchEnabled then return end
+
+        if removeEffectsEnabled and (
+            obj:IsA("ParticleEmitter") or obj:IsA("Smoke") or obj:IsA("Fire")
+            or obj:IsA("Sparkles") or obj:IsA("Trail") or obj:IsA("Beam")
+        ) then
+            task.defer(function()
+                if obj and obj.Parent then obj:Destroy() end
+            end)
+            return
+        end
+
+        if removeTreeEnabled and isTreeModel(obj) then
+            task.defer(function()
+                if obj and obj.Parent then removeTreeModel(obj) end
+            end)
+            return
+        end
+
+        if removeTreeEnabled and isGrass(obj) then
+            task.defer(function()
+                if obj and obj.Parent then obj:Destroy() end
+            end)
+            return
+        end
+
+        if obj:IsA("BasePart") then
+            smoothPart(obj)
+            watchPart(obj)
+            if stripDecorationsEnabled then
+                stripDecorations(obj)
+                watchDecorations(obj)
+            end
+        elseif stripDecorationsEnabled and (
+            obj:IsA("Decal") or obj:IsA("Texture")
+            or obj:IsA("SurfaceGui") or obj:IsA("SurfaceAppearance")
+        ) then
+            task.defer(function()
+                if obj and obj.Parent then obj:Destroy() end
+            end)
+        end
+    end))
+
+    for _, plr in ipairs(Players:GetPlayers()) do
+        watchCharacter(plr.Character)
+        table.insert(watchedConnections, plr.CharacterAdded:Connect(function(char)
+            task.wait(0.5)
+            if removeClothingEnabled then stripAccessories(char) end
+            if hidePlayersEnabled and plr ~= LocalPlayer then hideCharacter(char) end
+            watchCharacter(char)
+        end))
+    end
+
+    table.insert(watchedConnections, Players.PlayerAdded:Connect(function(plr)
+        table.insert(watchedConnections, plr.CharacterAdded:Connect(function(char)
+            task.wait(0.5)
+            if removeClothingEnabled then stripAccessories(char) end
+            if hidePlayersEnabled and plr ~= LocalPlayer then hideCharacter(char) end
+            watchCharacter(char)
+        end))
+    end))
+end
+
+-- =========================================
+-- ปุ่ม บูส V1 - V4
+-- =========================================
+FPSTab:CreateButton({
+    Name = "บูส V1",
+    Callback = function()
+        startAutoWatch(false, false, false, false, false)
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj:IsA("BasePart") then smoothPart(obj) end
+        end
+        notify("บูส FPS V1", "เรียบร้อย")
+    end,
+})
+
+FPSTab:CreateButton({
+    Name = "บูส V1.5",
+    Callback = function()
+        startAutoWatch(true, false, false, false, false)
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj:IsA("BasePart") then
+                smoothPart(obj)
+                stripDecorations(obj)
+                watchDecorations(obj)
+            end
+        end
+        notify("บูส FPS V1.5", "เรียบร้อย")
+    end,
+})
+
+FPSTab:CreateButton({
+    Name = "บูส V2",
+    Callback = function()
+        startAutoWatch(true, true, false, false, false)
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if isTreeModel(obj) then removeTreeModel(obj) end
+        end
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if isGrass(obj) then obj:Destroy() end
+        end
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj:IsA("BasePart") then
+                smoothPart(obj)
+                stripDecorations(obj)
+                watchDecorations(obj)
+            end
+        end
+        notify("บูส FPS V2", "เรียบร้อย")
+    end,
+})
+
+FPSTab:CreateButton({
+    Name = "บูส V3",
+    Callback = function()
+        startAutoWatch(true, true, true, false, false)
+        removeShadows()
+        stripAllPlayersAccessories()
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if isTreeModel(obj) then removeTreeModel(obj) end
+        end
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if isGrass(obj) then obj:Destroy() end
+        end
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj:IsA("BasePart") then
+                smoothPart(obj)
+                stripDecorations(obj)
+                watchDecorations(obj)
+            end
+        end
+        notify("บูส FPS V3", "เรียบร้อย")
+    end,
+})
+
+FPSTab:CreateButton({
+    Name = "บูส V4",
+    Callback = function()
+        startAutoWatch(true, true, true, true, true)
+        removeShadows()
+        stripAllPlayersAccessories()
+        hideAllOtherPlayers()
+        removeEffects()
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if isTreeModel(obj) then removeTreeModel(obj) end
+        end
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if isGrass(obj) then obj:Destroy() end
+        end
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj:IsA("BasePart") then
+                smoothPart(obj)
+                stripDecorations(obj)
+                watchDecorations(obj)
+            end
+        end
+        notify("บูส FPS V4", "เรียบร้อย")
+    end,
+})
+
+-- =========================================
+-- Space FPS UI
+-- =========================================
+local spaceFPSGui = nil
+local spaceFPSRunning = false
+
+local function createSpaceFPS()
+    local parent
+    pcall(function() parent = gethui and gethui() end)
+    if not parent then
+        pcall(function() parent = game:GetService("CoreGui") end)
+    end
+    if not parent then
+        parent = LocalPlayer:WaitForChild("PlayerGui")
+    end
+
+    if parent:FindFirstChild("SpaceFPS") then
+        parent.SpaceFPS:Destroy()
+    end
+
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "SpaceFPS"
+    gui.ResetOnSpawn = false
+    gui.IgnoreGuiInset = true
+    gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    gui.Parent = parent
+
+    local frame = Instance.new("Frame")
+    frame.Name = "Main"
+    frame.AnchorPoint = Vector2.new(1, 0)
+    frame.Size = UDim2.fromOffset(176, 58)
+    frame.Position = UDim2.new(1, -10, 0, 10)
+    frame.BackgroundColor3 = Color3.fromRGB(14, 14, 18)
+    frame.BackgroundTransparency = 0.05
+    frame.BorderSizePixel = 0
+    frame.ClipsDescendants = true
+    frame.Parent = gui
+    Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 12)
+
+    local bg = Instance.new("UIGradient", frame)
+    bg.Rotation = 135
+    bg.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(38, 38, 46)),
+        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(18, 18, 22)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(6, 6, 9)),
+    })
+
+    local stroke = Instance.new("UIStroke", frame)
+    stroke.Thickness = 1.6
+    stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    local strokeGrad = Instance.new("UIGradient", stroke)
+    strokeGrad.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(200, 200, 215)),
+        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(60, 60, 72)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(200, 200, 215)),
+    })
+
+    local rng = Random.new()
+    for i = 1, 16 do
+        local s = Instance.new("Frame")
+        local size = rng:NextInteger(1, 2)
+        s.Size = UDim2.fromOffset(size, size)
+        s.Position = UDim2.new(rng:NextNumber(), 0, rng:NextNumber(), 0)
+        s.BackgroundColor3 = Color3.fromRGB(235, 235, 245)
+        s.BackgroundTransparency = rng:NextNumber(0.3, 0.9)
+        s.BorderSizePixel = 0
+        s.ZIndex = 1
+        s.Parent = frame
+        Instance.new("UICorner", s).CornerRadius = UDim.new(1, 0)
+
+        task.spawn(function()
+            while s.Parent and spaceFPSRunning do
+                local t = TweenService:Create(
+                    s,
+                    TweenInfo.new(rng:NextNumber(0.8, 2.2), Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
+                    { BackgroundTransparency = rng:NextNumber(0.1, 0.95) }
+                )
+                t:Play()
+                t.Completed:Wait()
+            end
+        end)
+    end
+
+    local bar = Instance.new("Frame")
+    bar.Size = UDim2.new(0, 3, 1, -16)
+    bar.Position = UDim2.fromOffset(8, 8)
+    bar.BorderSizePixel = 0
+    bar.BackgroundColor3 = Color3.fromRGB(120, 255, 170)
+    bar.ZIndex = 3
+    bar.Parent = frame
+    Instance.new("UICorner", bar).CornerRadius = UDim.new(1, 0)
+
+    local fpsLabel = Instance.new("TextLabel")
+    fpsLabel.BackgroundTransparency = 1
+    fpsLabel.Position = UDim2.fromOffset(20, 4)
+    fpsLabel.Size = UDim2.fromOffset(90, 34)
+    fpsLabel.Font = Enum.Font.GothamBlack
+    fpsLabel.Text = "60"
+    fpsLabel.TextSize = 28
+    fpsLabel.TextXAlignment = Enum.TextXAlignment.Left
+    fpsLabel.TextColor3 = Color3.fromRGB(235, 235, 245)
+    fpsLabel.ZIndex = 3
+    fpsLabel.Parent = frame
+
+    local fpsTag = Instance.new("TextLabel")
+    fpsTag.BackgroundTransparency = 1
+    fpsTag.Position = UDim2.fromOffset(62, 16)
+    fpsTag.Size = UDim2.fromOffset(40, 18)
+    fpsTag.Font = Enum.Font.GothamBold
+    fpsTag.Text = "FPS"
+    fpsTag.TextSize = 11
+    fpsTag.TextXAlignment = Enum.TextXAlignment.Left
+    fpsTag.TextColor3 = Color3.fromRGB(140, 140, 155)
+    fpsTag.ZIndex = 3
+    fpsTag.Parent = frame
+
+    local pingLabel = Instance.new("TextLabel")
+    pingLabel.BackgroundTransparency = 1
+    pingLabel.Position = UDim2.fromOffset(20, 36)
+    pingLabel.Size = UDim2.new(1, -28, 0, 16)
+    pingLabel.Font = Enum.Font.Gotham
+    pingLabel.Text = "PING  -- ms"
+    pingLabel.TextSize = 11
+    pingLabel.TextXAlignment = Enum.TextXAlignment.Left
+    pingLabel.TextColor3 = Color3.fromRGB(150, 150, 165)
+    pingLabel.ZIndex = 3
+    pingLabel.Parent = frame
+
+    local planet = Instance.new("Frame")
+    planet.Size = UDim2.fromOffset(22, 22)
+    planet.Position = UDim2.new(1, -32, 0, 10)
+    planet.BackgroundColor3 = Color3.fromRGB(90, 90, 105)
+    planet.BorderSizePixel = 0
+    planet.ZIndex = 3
+    planet.Parent = frame
+    Instance.new("UICorner", planet).CornerRadius = UDim.new(1, 0)
+    local pg = Instance.new("UIGradient", planet)
+    pg.Rotation = 45
+    pg.Color = ColorSequence.new(Color3.fromRGB(210, 210, 225), Color3.fromRGB(25, 25, 32))
+
+    local ring = Instance.new("Frame")
+    ring.Size = UDim2.fromOffset(34, 8)
+    ring.Position = UDim2.new(1, -38, 0, 17)
+    ring.BackgroundTransparency = 1
+    ring.Rotation = -20
+    ring.ZIndex = 4
+    ring.Parent = frame
+    Instance.new("UICorner", ring).CornerRadius = UDim.new(1, 0)
+    local rs = Instance.new("UIStroke", ring)
+    rs.Thickness = 1.2
+    rs.Color = Color3.fromRGB(170, 170, 185)
+    rs.Transparency = 0.2
+
+    local dragging, dragStart, startPos
+    frame.InputBegan:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+            dragging, dragStart, startPos = true, i.Position, frame.Position
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(i)
+        if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
+            local d = i.Position - dragStart
+            frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
+        end
+    end)
+    UserInputService.InputEnded:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+        end
+    end)
+
+    local frames, elapsed, smooth = 0, 0, 60
+    task.spawn(function()
+        while spaceFPSRunning and gui.Parent do
+            local dt = RunService.RenderStepped:Wait()
+            strokeGrad.Rotation = (strokeGrad.Rotation + dt * 60) % 360
+            frames += 1
+            elapsed += dt
+            if elapsed >= 0.4 then
+                smooth = smooth + (frames / elapsed - smooth) * 0.5
+                frames, elapsed = 0, 0
+
+                local f = math.floor(smooth + 0.5)
+                fpsLabel.Text = tostring(f)
+
+                local col
+                if f >= 50 then
+                    col = Color3.fromRGB(120, 255, 170)
+                elseif f >= 30 then
+                    col = Color3.fromRGB(255, 215, 110)
+                else
+                    col = Color3.fromRGB(255, 95, 95)
+                end
+                bar.BackgroundColor3 = col
+                TweenService:Create(fpsLabel, TweenInfo.new(0.3), { TextColor3 = col:Lerp(Color3.new(1, 1, 1), 0.6) }):Play()
+
+                local ok, ping = pcall(function()
+                    return Stats.Network.ServerStatsItem["Data Ping"]:GetValue()
+                end)
+                pingLabel.Text = ok and ("PING  " .. math.floor(ping) .. " ms") or "PING  -- ms"
+            end
+        end
+    end)
+
+    spaceFPSGui = gui
+end
+
+local function startSpaceFPS()
+    if spaceFPSRunning then return end
+    spaceFPSRunning = true
+    createSpaceFPS()
+end
+
+local function stopSpaceFPS()
+    spaceFPSRunning = false
+    if spaceFPSGui then
+        spaceFPSGui:Destroy()
+        spaceFPSGui = nil
+    end
+end
+
+DisplayTab:CreateToggle({
+    Name = "แสดง FPS",
+    CurrentValue = false,
+    Flag = "ShowFPS",
+    Callback = function(value)
+        if value then
+            startSpaceFPS()
+            notify("แสดง FPS", "เปิดใช้งาน")
+        else
+            stopSpaceFPS()
+            notify("แสดง FPS", "ปิดใช้งาน")
+        end
+    end,
+})
+
+-- =========================================
+-- ระบบปรับค่าการเคลื่อนไหว (Speed/Jump/AirStrafe)
+-- =========================================
+
+local currentSettings = {
+    Speed = 1555,
+    JumpCap = 2,
+    AirStrafeAcceleration = 187,
+}
+
+getgenv().ApplyMode = "Optimized"
+getgenv().AutoApplySettings = true
+getgenv().KRYVEX_PreserveSpeedBoost = true
+
+local MAX_VALUE = 30000
+
+local function safe(Value)
+    Value = tonumber(Value) or 0
+    if Value > MAX_VALUE then return MAX_VALUE end
+    if Value < 0 then return 0 end
+    return Value
+end
+
+local requiredFields = {
+    Friction = true,
+    AirStrafeAcceleration = true,
+    JumpHeight = true,
+    RunDeaccel = true,
+    JumpSpeedMultiplier = true,
+    JumpCap = true,
+    SprintCap = true,
+    WalkSpeedMultiplier = true,
+    BhopEnabled = true,
+    Speed = true,
+    AirAcceleration = true,
+    RunAccel = true,
+    SprintAcceleration = true,
+}
+
+local cachedTables
+
+local SpeedMonitorEnv = getgenv()
+SpeedMonitorEnv.KRYVEX_SpeedBaselineMonitorGeneration =
+    (SpeedMonitorEnv.KRYVEX_SpeedBaselineMonitorGeneration or 0) + 1
+local SpeedMonitorGeneration = SpeedMonitorEnv.KRYVEX_SpeedBaselineMonitorGeneration
+
+local NativeSpeedByTable = SpeedMonitorEnv.KRYVEX_NativeSpeedByTable
+if type(NativeSpeedByTable) ~= "table" then
+    NativeSpeedByTable = setmetatable({}, { __mode = "k" })
+    SpeedMonitorEnv.KRYVEX_NativeSpeedByTable = NativeSpeedByTable
+end
+
+local NativeReturnSince = setmetatable({}, { __mode = "k" })
+local SPEED_RESTORE_STABLE_TIME = 2.5
+local SPEED_COMPARE_EPSILON = 0.001
+
+local function getMatchingTables()
+    if cachedTables then return cachedTables end
+
+    local Result = {}
+    for _, Object in ipairs(getgc(true)) do
+        if typeof(Object) == "table" then
+            local Valid = true
+            for Field in pairs(requiredFields) do
+                if rawget(Object, Field) == nil then
+                    Valid = false
+                    break
+                end
+            end
+            if Valid then
+                table.insert(Result, Object)
+            end
+        end
+    end
+
+    if #Result > 0 then cachedTables = Result end
+    return Result
+end
+
+local function applyToTables()
+    local Mode = getgenv().ApplyMode
+    local Tables = getMatchingTables()
+
+    for _, Table in ipairs(Tables) do
+        pcall(function()
+            if Mode == "Not Optimized" then
+                if getgenv().KRYVEX_PreserveSpeedBoost ~= true then
+                    Table.Speed = currentSettings.Speed
+                end
+                Table.JumpCap = currentSettings.JumpCap
+                Table.AirStrafeAcceleration = currentSettings.AirStrafeAcceleration
+            else
+                if getgenv().KRYVEX_PreserveSpeedBoost ~= true
+                    and Table.Speed ~= currentSettings.Speed then
+                    Table.Speed = currentSettings.Speed
+                end
+                if Table.JumpCap ~= currentSettings.JumpCap then
+                    Table.JumpCap = currentSettings.JumpCap
+                end
+                if Table.AirStrafeAcceleration ~= currentSettings.AirStrafeAcceleration then
+                    Table.AirStrafeAcceleration = currentSettings.AirStrafeAcceleration
+                end
+            end
+        end)
+    end
+end
+
+local function applySpeedBaseline()
+    local Tables = getMatchingTables()
+    local Applied = 0
+
+    for _, Table in ipairs(Tables) do
+        local CurrentSpeed = rawget(Table, "Speed")
+        if NativeSpeedByTable[Table] == nil and type(CurrentSpeed) == "number" then
+            NativeSpeedByTable[Table] = CurrentSpeed
+        end
+
+        local Success = pcall(function()
+            Table.Speed = currentSettings.Speed
+        end)
+        if Success then Applied += 1 end
+    end
+
+    return Applied > 0, Applied
+end
+
+local function RefreshNativeSpeedCache(Tables)
+    for _, Table in ipairs(Tables) do
+        local CurrentSpeed = rawget(Table, "Speed")
+        if type(CurrentSpeed) == "number" then
+            NativeSpeedByTable[Table] = CurrentSpeed
+            NativeReturnSince[Table] = nil
+        end
+    end
+end
+
+local function StartSpeedBaselineMonitor()
+    task.spawn(function()
+        while SpeedMonitorEnv.KRYVEX_SpeedBaselineMonitorGeneration
+            == SpeedMonitorGeneration do
+            if getgenv().KRYVEX_PreserveSpeedBoost == true and cachedTables then
+                for _, Table in ipairs(cachedTables) do
+                    local CurrentSpeed = rawget(Table, "Speed")
+                    local NativeSpeed = NativeSpeedByTable[Table]
+
+                    if type(CurrentSpeed) == "number"
+                        and type(NativeSpeed) == "number"
+                        and math.abs(CurrentSpeed - NativeSpeed) <= SPEED_COMPARE_EPSILON
+                        and math.abs(currentSettings.Speed - NativeSpeed) > SPEED_COMPARE_EPSILON then
+
+                        local Since = NativeReturnSince[Table]
+                        if not Since then
+                            NativeReturnSince[Table] = os.clock()
+                        elseif os.clock() - Since >= SPEED_RESTORE_STABLE_TIME then
+                            pcall(function()
+                                local LatestSpeed = rawget(Table, "Speed")
+                                if type(LatestSpeed) == "number"
+                                    and math.abs(LatestSpeed - NativeSpeed) <= SPEED_COMPARE_EPSILON
+                                    and getgenv().KRYVEX_PreserveSpeedBoost == true then
+                                    Table.Speed = currentSettings.Speed
+                                end
+                            end)
+                            NativeReturnSince[Table] = nil
+                        end
+                    else
+                        NativeReturnSince[Table] = nil
+                    end
+                end
+            end
+            task.wait(1)
+        end
+    end)
+end
+
+StartSpeedBaselineMonitor()
+
+local SpeedModeSignalSent = false
+local SpeedBaselineReapplyPending = false
+local function SendSpeedModeSignalOnce()
+    if SpeedModeSignalSent then return end
+
+    local RequestWithReturn = getgenv().KRYVEX_SendSpeedModeWithReturnPosition
+    if type(RequestWithReturn) ~= "function" then
+        warn("[KRYVEX Speed] ระบบคืนตำแหน่งยังไม่พร้อม")
+        return
+    end
+
+    SpeedModeSignalSent = true
+
+    local CallSuccess, RequestSuccess, ErrorMessage = pcall(RequestWithReturn)
+    if not CallSuccess then
+        warn("[KRYVEX Speed] เรียก SetPlayerMode ไม่สำเร็จ:", RequestSuccess)
+    elseif RequestSuccess == false then
+        warn("[KRYVEX Speed] ส่ง SetPlayerMode ไม่สำเร็จ:", ErrorMessage)
+    end
+end
+
+local AutoApplyEnv = getgenv()
+AutoApplyEnv.KRYVEX_AutoApplyGeneration =
+    (AutoApplyEnv.KRYVEX_AutoApplyGeneration or 0) + 1
+local AutoApplyGeneration = AutoApplyEnv.KRYVEX_AutoApplyGeneration
+
+task.spawn(function()
+    while AutoApplyEnv.KRYVEX_AutoApplyGeneration == AutoApplyGeneration do
+        if AutoApplyEnv.AutoApplySettings then
+            applyToTables()
+        end
+        task.wait(1)
+    end
+end)
+
+-- =========================================
+-- UI ในหมวด แสดง (ส่วนเคลื่อนไหว)
+-- =========================================
+DisplayTab:CreateInput({
+    Name = "ความเร็ว",
+    PlaceholderText = "ใส่ตัวเลข",
+    Default = tostring(currentSettings.Speed),
+    Callback = function(Value)
+        local Number = tonumber(Value)
+        if Number then
+            local NewSpeed = safe(Number)
+            local SpeedChanged = NewSpeed ~= currentSettings.Speed
+
+            currentSettings.Speed = NewSpeed
+            cachedTables = nil
+
+            if getgenv().KRYVEX_PreserveSpeedBoost == true then
+                applySpeedBaseline()
+            else
+                applyToTables()
+            end
+
+            if SpeedChanged then
+                SpeedBaselineReapplyPending = true
+                SendSpeedModeSignalOnce()
+            end
+        end
+    end,
+})
+
+DisplayTab:CreateToggle({
+    Name = "รักษาบัฟความเร็ว",
+    CurrentValue = true,
+    Flag = "PreserveSpeedBoost",
+    Callback = function(Value)
+        getgenv().KRYVEX_PreserveSpeedBoost = Value and true or false
+        cachedTables = nil
+
+        if getgenv().KRYVEX_PreserveSpeedBoost then
+            applyToTables()
+        else
+            applySpeedBaseline()
+            applyToTables()
+        end
+    end,
+})
+
+DisplayTab:CreateInput({
+    Name = "ขีดจำกัดการกระโดด",
+    PlaceholderText = "ใส่ตัวเลข",
+    Default = tostring(currentSettings.JumpCap),
+    Callback = function(Value)
+        local Number = tonumber(Value)
+        if Number then
+            currentSettings.JumpCap = safe(Number)
+            applyToTables()
+        end
+    end,
+})
+
+DisplayTab:CreateInput({
+    Name = "ความเร่งกลางอากาศ",
+    PlaceholderText = "ใส่ตัวเลข",
+    Default = tostring(currentSettings.AirStrafeAcceleration),
+    Callback = function(Value)
+        local Number = tonumber(Value)
+        if Number then
+            currentSettings.AirStrafeAcceleration = safe(Number)
+            applyToTables()
+        end
+    end,
+})
+
+DisplayTab:CreateDropdown({
+    Name = "วิธีการปรับค่า",
+    Values = { "Not Optimized", "Optimized" },
+    Default = "Optimized",
+    Callback = function(Option)
+        getgenv().ApplyMode = Option
+        cachedTables = nil
+        applyToTables()
+    end,
+})
+
+DisplayTab:CreateToggle({
+    Name = "ปรับค่าอัตโนมัติ",
+    CurrentValue = true,
+    Flag = "AutoApplySettings",
+    Callback = function(Value)
+        getgenv().AutoApplySettings = Value
+        if Value then
+            cachedTables = nil
+            applyToTables()
+        end
+    end,
+})
+
+DisplayTab:CreateButton({
+    Name = "รีเซ็ตค่าการเคลื่อนไหว",
+    Callback = function()
+        currentSettings.Speed = 1500
+        currentSettings.JumpCap = 2
+        currentSettings.AirStrafeAcceleration = 187
+
+        cachedTables = nil
+        applyToTables()
+        applySpeedBaseline()
+
+        notify("KRYVEX HUB", "รีเซ็ตค่าการเคลื่อนไหวแล้ว")
+    end,
+})
+
+-- =========================================
+-- Apply speed หลังเกิดใหม่
+-- =========================================
+local SpeedRespawnEnv = getgenv()
+SpeedRespawnEnv.KRYVEX_SpeedRespawnGeneration =
+    (SpeedRespawnEnv.KRYVEX_SpeedRespawnGeneration or 0) + 1
+local SpeedRespawnGeneration = SpeedRespawnEnv.KRYVEX_SpeedRespawnGeneration
+
+local function ApplySpeedAfterCharacter(Character)
+    task.spawn(function()
+        local Humanoid = Character:WaitForChild("Humanoid", 10)
+        local Root = Character:WaitForChild("HumanoidRootPart", 10)
+        if not Humanoid or not Root then return end
+
+        task.wait(0.75)
+
+        for Attempt = 1, 8 do
+            if SpeedRespawnEnv.KRYVEX_SpeedRespawnGeneration ~= SpeedRespawnGeneration
+                or LocalPlayer.Character ~= Character then
+                return
+            end
+
+            local ShouldApplySpeed = getgenv().AutoApplySettings == true
+                or SpeedBaselineReapplyPending
+            if not ShouldApplySpeed then return end
+
+            cachedTables = nil
+            local Tables = getMatchingTables()
+            RefreshNativeSpeedCache(Tables)
+
+            if getgenv().AutoApplySettings then
+                applyToTables()
+            end
+
+            local Applied = applySpeedBaseline()
+            if Applied then
+                SpeedBaselineReapplyPending = false
+                return
+            end
+
+            if Attempt < 8 then
+                task.wait(0.75)
+            end
+        end
+    end)
+end
+
+LocalPlayer.CharacterAdded:Connect(ApplySpeedAfterCharacter)
+
+if LocalPlayer.Character then
+    ApplySpeedAfterCharacter(LocalPlayer.Character)
+end
